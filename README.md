@@ -1,4 +1,4 @@
-# Projects
+# Portfolio
 
 Welcome to my GitHub repository, where you'll find a collection of my school projects and individual analyses. This portfolio showcases my skills in data analysis, programming, and problem-solving.
 
