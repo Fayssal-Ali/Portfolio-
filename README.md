@@ -4,7 +4,7 @@ Welcome to my GitHub repository, where you'll find a collection of my school pro
 
 Throughout my projects and analyses, I have used the following technologies and tools:
 
-- Programming languages: R, Python, SQL
+- Programming languages: R, Python, SQL, SAS
 - Data analysis libraries: ggplot2, tidyverse, dplyr, pandas, NumPy
 - Visualization libraries: R-shiny, Power BI
 - Version control: Git and GitHub
