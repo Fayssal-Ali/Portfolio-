@@ -1,0 +1,853 @@
+---
+title: "Sleeve Project CE Draft"
+author: "Fayssal Ali"
+date: "2023-04-01"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+#Set working directory 
+```{r}
+setwd("~/Sleeve Project")
+```
+
+
+#Load libraries
+```{r}
+library(readxl)
+library(omicsArt)
+library(MASS)
+library(multcomp)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(psych)
+library(lme4)
+library(corrplot)
+library(tidyverse)
+library(knitr)
+library(gt)
+library(qqplotr)
+library(cowplot)
+library(ggstatsplot)
+library(forestplot)
+```
+#Load Dataset
+```{r}
+metadata <- read_xlsx("~/Sleeve Project/metadata-3.xlsx")
+```
+
+#Data Wrangling
+```{r}
+metadata <- as.data.frame(metadata[!is.na(metadata$Microbiome_ID), ])
+
+# get rid of Microbiome_ID and set it as row names
+rownames(metadata) <- metadata$Microbiome_ID
+metadata <- metadata[ , -7]
+
+#Seperate clinical data from metadata
+clinic_df <- metadata[ , c(1:61)]
+
+#Seperate the data based on Visit time points: baseline, 6 months, 12 months, 18 months, 24 months
+clinicV0 <- clinic_df[clinic_df$Visit == 0,]
+clinicV6 <- clinic_df[clinic_df$Visit == 6,]
+clinicV12 <- clinic_df[clinic_df$Visit == 12,]
+clinicV18 <- clinic_df[clinic_df$Visit == 18,]
+clinicV24 <- clinic_df[clinic_df$Visit == 24,]
+```
+
+#Univariate Analysis
+```{r}
+#Check distribution of variables 
+vec1 <- clinicV24$BMI
+vec2 <- clinicV24$`AUC Insulin`
+vec3 <- clinicV24$HBA1c
+vec4 <- clinicV24$`Total Body BMD`
+vec5 <- clinicV24$`Femoral Neck BMD`
+vec6 <- clinicV24$`Total Hip BMD`
+vec7 <- clinicV24$`Lumbar Spine BMD`
+hist(vec1, main = "Histogram of BMI", xlab = "BMI", col = "lightblue", border = "black")
+hist(vec2, main = "Histogram of AUC Insulin", xlab = "Insulin", col = "lightblue", border = "black")
+hist(vec3, main = "Histogram of HBA1C", xlab = "HBA1C", col = "lightblue", border = "black")
+hist(vec4, main = "Histogram of Total Body BMD", xlab = "Body BMD", col = "lightblue", border = "black")
+hist(vec5, main = "Histogram of Femoral Neck BMD", xlab = "Neck BMD", col = "lightblue", border = "black")
+hist(vec6, main = "Histogram of Total Hip BMD", xlab = "Hip BMD", col = "lightblue", border = "black")
+hist(vec7, main = "Histogram of Total Hip BMD", xlab = "Hip BMD", col = "lightblue", border = "black")
+
+
+#BMI QQ Plot
+qqnorm(vec1, main = "Q-Q Plot of BMI")
+qqline(vec1, col = "red")
+
+#Surgical Status
+xtabs( ~ `Surgical Status`,data = clinicV24)
+ggplot(clinicV24) +
+  geom_bar(aes(x=`Surgical Status`), fill = "blue", width = .5)
+
+#Group Status
+xtabs( ~ `Group Status`,data = clinicV24)
+ggplot(clinicV24) +
+  geom_bar(aes(x=`Group Status`), fill = "blue", width = .5)
+
+
+
+```
+#Summary Statistics
+```{r}
+#Age at Visit
+describe(clinicV24$`Age at Visit`)
+barplot(table(clinicV24$`Age at Visit`),
+        main = "Age Distribution",
+        width = 20,
+        xlab="Age",
+        ylab = "Count",
+        border = "red",
+        density=1
+)
+
+#BMI
+describe(clinicV24$BMI)
+
+barplot(table(clinicV24$BMI),
+        main = "BMI Disribution",
+        width = 20,
+        xlab="BMI",
+        ylab = "Count",
+        border = "red",
+        density=1
+)
+#Sex
+xtabs( ~ Sex,data = clinicV24)
+table(clinicV24$`Surgical Status`, clinicV24$Sex)
+#Race
+xtabs( ~ Race,data = clinicV24)
+#Ethnicity 
+xtabs( ~ Ethnicity,data = clinicV24)
+table(clinicV24$`Surgical Status`, clinicV24$Ethnicity)
+#HBA1C
+describe(clinicV24$HBA1c)
+barplot(table(clinicV24$HBA1c),
+        main = "HBA1C Distribution",
+        width = 20,
+        xlab="BMI",
+        ylab = "Count",
+        border = "red",
+        density=1
+)
+
+#Insulin:
+describe(clinicV24$`AUC Insulin`)
+
+#Total Body BMD
+describe(clinicV24$`Total Body BMD`)
+#Total Hip BMD
+describe(clinicV24$`Total Hip BMD`)
+#Femoral Neck BMD
+describe(clinicV24$`Femoral Neck BMD`)
+#Lumbar Spine BMD
+describe(clinicV24$`Lumbar Spine BMD`)
+```
+#Bivariate Analysis BMI and Surgical Status 
+```{r}
+median <- clinicV24 %>%
+  group_by(`Surgical Status`) %>%
+  summarize(median_value = median(BMI, na.rm = TRUE))
+
+surgery_plot <- ggplot(clinicV24, aes(x = `Surgical Status`, y = BMI, fill = `Surgical Status`)) +   geom_boxplot() + 
+  geom_text(data = median, aes(label = round(median_value, 2), y = median_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgical Status", y = "BMI", title = "Surgical groups BMI at 24 Months") +
+  theme_classic() + 
+  scale_fill_brewer(palette = "Set1")
+
+
+surgery_plot
+#Multiple timepoint boxplots
+clinic_df$Visit <- as.factor(clinic_df$Visit) # Make sure the 'time_point' variable is a factor
+
+bmi_median <- clinic_df %>%
+  group_by(Visit, `Surgical Status`) %>%
+  summarize(med_bmi = median(BMI, na.rm = TRUE))
+
+time_plot <- ggplot()+
+  geom_line(data= bmi_median, aes(x= Visit , y = med_bmi, group = `Surgical Status`, color =`Surgical Status`), linewidth = 1) +
+  geom_point(data=clinic_df, aes(x= Visit, y= BMI, group= `Surgical Status`, color = `Surgical Status`), alpha =0.5,size=.5) +
+  labs(
+    title = "BMI Changes Over Time",
+    x = "Time",
+    y = "BMI",
+    color = "Group"
+  ) +
+  scale_y_continuous(breaks = seq(0, 70, by = 20))+
+  theme_classic()
+
+time_plot
+```
+#Bivariate Analysis of BMI and Group Status
+```{r}
+median_group <- clinicV24 %>%
+  group_by(`Group Status`) %>%
+  summarize(median_value = median(BMI, na.rm = TRUE))
+
+group_plot <- ggplot(clinicV24, aes(x = `Group Status`, y = BMI, fill = `Group Status`)) + 
+  geom_boxplot(show.legend = F) + 
+  geom_text(data = median_group, aes(label = round(median_value, 2), y = median_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Group Status", y = "BMI", title = "BMI by Group Status") +
+  theme_classic() + 
+  scale_fill_brewer(palette = "Set1")
+
+group_plot
+```
+
+
+
+#Bivariate Analysis AUC Insulin and Surgical Status 
+```{r}
+#Insulin Baseline
+ggplot(clinicV0, aes(x = `Surgical Status`, y = `AUC Insulin`, fill = `Surgical Status`)) + 
+  geom_boxplot() + 
+  labs(x = "Surgical Status", y = "Insulin") +
+  theme_classic() + 
+  scale_fill_brewer(palette = "Set1")
+
+
+#Insulins time 12
+ins_median_12 <- clinicV12 %>%
+  group_by(`Surgical Status`) %>%
+  summarize(ins_median_value = median(`AUC Insulin`, na.rm = TRUE))
+
+ins_12 <- ggplot(clinicV12, aes(x = `Surgical Status`, y = `AUC Insulin`, fill = `Surgical Status`)) + 
+  geom_boxplot(show.legend = F) + 
+  geom_text(data = ins_median_12, aes(label = round(ins_median_value, 2), y = ins_median_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgical Status", y = "Insulin", title = "Insulin Levels at 12 months") +
+  theme_classic() + 
+  scale_fill_brewer(palette = "Set1")
+
+#Insulin time 24
+ins_median <- clinicV24 %>%
+  group_by(`Surgical Status`) %>%
+  summarize(ins_median_value = median(`AUC Insulin`, na.rm = TRUE))
+
+ins_boxplot <- ggplot(clinicV24, aes(x = `Surgical Status`, y = `AUC Insulin`, fill = `Surgical Status`)) + 
+  geom_boxplot(show.legend = F) + 
+  geom_text(data = ins_median, aes(label = round(ins_median_value, 2), y = ins_median_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgical Status", y = "Insulin", title = "Insulin Levels at 24 months") +
+  scale_y_continuous(breaks = seq(0, 40000, by = 10000))+
+  theme_classic() + 
+  scale_fill_brewer(palette = "Set1")
+
+ins_boxplot
+```
+
+#COMBINED Inslin Boxplots
+```{r}
+ins_combined_plot <- plot_grid(ins_12, ins_boxplot, nrow = 1, ncol = 2)
+ins_combined_plot
+```
+
+
+#Bivaraite Analysis of HBA1C and Surgical Status
+```{r}
+describe(clinicV0$HBA1c)
+describe(clinicV24$HBA1c)
+
+ggplot(clinicV24, aes(x = `Surgical Status`, y = HBA1c, fill = `Surgical Status`)) + 
+  geom_boxplot()  + 
+  labs(x = "Surgical Status", y = "HBA1c") +
+  theme_classic() + 
+  scale_fill_brewer(palette = "Set1")
+
+```
+#Bivariate Analysis of BMD (Total Body, Femral, Neck and Spine)
+```{r}
+#Total Body BMD
+body_means <- clinicV24 %>%
+  group_by(`Surgical Status`, Visit) %>%
+  summarize(mean_value = mean(`Total Body BMD`, na.rm = TRUE))
+
+body_plot <- ggplot(clinicV24, aes(x = `Surgical Status`, y = `Total Body BMD`, fill = `Surgical Status`)) + 
+  geom_violin(position = position_dodge(width = 0.9), trim = FALSE, alpha = 0.7, show.legend = F)+
+  geom_text(data = body_means, aes(label = round(mean_value, 2), y = mean_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgery Status", y = "Total Body BMD", title = "Distribution of Body BMD") +
+  theme_classic() + # Use a black and white theme
+  scale_fill_brewer(palette = "Set1") 
+
+#Total Hip BMD
+hip_means <- clinicV24 %>%
+  group_by(`Surgical Status`, Visit) %>%
+  summarize(mean_value = mean(`Total Hip BMD`, na.rm = TRUE))
+
+hip_plot <- ggplot(clinicV24, aes(x = `Surgical Status`, y = `Total Hip BMD`, fill = `Surgical Status`)) + 
+  geom_violin(position = position_dodge(width = 0.9), trim = FALSE, alpha = 0.7, show.legend = F)  +
+  geom_text(data = hip_means, aes(label = round(mean_value, 2), y = mean_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgery Status", y = "Total Hip BMD", title = "Distribution of Hip BMD") +
+  theme_classic() + # Use a black and white theme
+  scale_fill_brewer(palette = "Set1") 
+
+#Femoral Neck BMD
+neck_means <- clinicV24 %>%
+  group_by(`Surgical Status`, Visit) %>%
+  summarize(mean_value = mean(`Femoral Neck BMD`, na.rm = TRUE))
+
+neck_plot <- ggplot(clinicV24, aes(x = `Surgical Status`, y = `Femoral Neck BMD`, fill = `Surgical Status`)) + 
+  geom_violin(position = position_dodge(width = 0.9), trim = FALSE, alpha = 0.7, show.legend = F)  +
+  geom_text(data = neck_means, aes(label = round(mean_value, 2), y = mean_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgery Status", y = "Femoral Neck BMD", title = "Distribution of Neck BMD") +
+  theme_classic() + # Use a black and white theme
+  scale_fill_brewer(palette = "Set1") 
+
+#Lubar Spine BMD
+spine_means <- clinicV24 %>%
+  group_by(`Surgical Status`, Visit) %>%
+  summarize(mean_value = mean(`Lumbar Spine BMD`, na.rm = TRUE))
+
+spine_plot <- ggplot(clinicV24, aes(x = `Surgical Status`, y = `Femoral Neck BMD`, fill = `Surgical Status`)) + 
+  geom_violin(position = position_dodge(width = 0.9), trim = FALSE, alpha = 0.7, show.legend = F)  +
+  geom_text(data = spine_means, aes(label = round(mean_value, 2), y = mean_value), 
+            position = position_dodge(width = 0.75), vjust = -0.5, size = 3.5) + 
+  labs(x = "Surgery Status", y = "Lubmar Spine BMD", title = "Distribution of Spine BMD") +
+  theme_classic() + # Use a black and white theme
+  scale_fill_brewer(palette = "Set1") 
+
+#Display graphs
+body_plot
+hip_plot
+neck_plot
+spine_plot
+
+combine_bmd_plots <- plot_grid(body_plot,
+hip_plot,
+neck_plot,
+spine_plot)
+```
+#Statistical Analysis of BMI and Surgical Groups
+```{r}
+#Multiple Linear Model of Surgical Status on BMI while controlling for Sex, Race, and Ethnicity
+#reduced model
+#factor Accordingly 
+clinicV24$`Surgical Status` <- as.factor(clinicV24$`Surgical Status`)
+clinicV24$Sex <- as.factor(clinicV24$Sex)
+clinicV24$Race <- as.factor(clinicV24$Race)
+clinicV24$Ethnicity <- as.factor(clinicV24$Ethnicity)
+
+#reduced model
+reducedmodel <- lm(BMI~1, data= clinicV24)
+summary(reducedmodel)
+
+reducedfit <- lm(BMI ~ `Surgical Status`, data = clinicV24)
+summary(reducedfit)
+AIC(reducedfit)
+
+red2 <- lm(BMI ~ Ethnicity, data = clinicV24)
+summary(red2) #not significant 
+
+red3 <- lm(BMI ~ Ethnicity+`Surgical Status`, data = clinicV24)
+summary(red3)
+AIC(red3)
+
+red4 <- lm(BMI ~ Race, data = clinicV24)
+summary(red4)
+anova(red4) #not significant
+
+red5 <- lm(BMI ~ Sex, data = clinicV24)
+summary(red5) 
+#Male have a BMI 5.56 higher than females 
+
+red6 <- lm(BMI ~ `Age at Visit`, data = clinicV24)
+summary(red6) #not significant
+```
+
+
+#Final Model
+$$Y = \beta_{0} + \beta_{1} X_{1} + \beta_{2} X_{2} + \beta_{3} X_{3} + \beta_{4} X_{4} + \epsilon$$
+```{r}
+
+sum(clinicV24$Race == "White")
+sum(clinicV24$Race != "White")
+
+clinicV24$race_w  <- ifelse(clinicV24$Race == "White", 1, 0)
+
+
+fit1 <- lm(BMI ~ `Surgical Status`+ Race+ Sex +Ethnicity, data = clinicV24)
+anova(fit1)
+AIC(fit1)
+summary(fit1)       
+confint(fit1)
+#Surgery patients had a BMI 7.5 95% CI (-12.0726026, -2.960327)less than nonSurgery after controlling for Race, Sex and Ethnicity
+#nonHispanics had a BMI 6.24 95% CI (0.9986087, 11.482831) higher than Hispanics after controlling for Surgical status, race, and sex
+
+
+fit8 <- lm(BMI ~ `Surgical Status`+ race_w, data= clinicV24)
+summary(fit8)
+           
+fit9 <- lm(BMI ~ `Surgical Status`+ race_w+ Sex +Ethnicity, data = clinicV24)
+summary(fit9)
+AIC(fit1)
+AIC(fit9)
+
+
+```
+
+#Check Model Assumptions
+```{r}
+qplot <- qqnorm(resid(fit1)); qqline(resid(fit1))
+
+#anova test
+anova(reducedmodel, fit1, test="F")
+
+# Type III test to check variables
+drop1(fit1,~.,test = "F")
+summary(fit1)
+confint(fit1)
+
+#graph 
+y=(1:100)
+x=(1:100)
+par(mfrow=c(1,1))
+plot( fitted(fit1) ~ clinicV24$BMI, 
+      ylab= "Fitted BMI",
+      xlab= "BMI",
+      main= "Actual Vs. Fitted Values")
+text(fitted(fit1)~clinicV24$BMI,data=clinicV24,label=`Surgical Status`)
+abline(lm(y~x))
+
+#Test model assumptions
+par(mfrow=c(1,2))
+## resid plot
+plot(resid(fit1)~fitted(fit1))
+lines(lowess(resid(fit1)~fitted(fit1)))
+## resid^2 plot
+plot(I(resid(fit1)^2)~fitted(fit1),cex=.25,pch=16,data=clinicV24)
+#text(I(resid(fit)^2)~fitted(fit),data=newyear1,label=Country)
+lines(lowess(resid(fit1)^2~fitted(fit1)))
+mean(resid(fit1))
+
+#influential points
+plot(rstudent(fit1)~influence(fit1)$hat,type="n",ylim=c(-5,5))
+text(rstudent(fit1)~influence(fit1)$hat,data=clinicV24)
+abline(h=c(-3,3),v=c(2,3)*2/nrow(clinicV24)) #no u=influential points
+
+#histogram
+hist(resid(fit1))
+
+## qqplot
+qqnorm(resid(fit1)); qqline(resid(fit1)) #Add this to PPT
+
+
+
+```
+
+
+
+#Short Analysis of BMI by Group Status
+```{r}
+#simple model
+group_mod <- lm(BMI ~ `Group Status`, data = clinicV24)
+summary(group_mod)
+
+#adjusted model 
+group_mod2 <- lm(BMI ~ `Group Status`+ Race+ Sex +Ethnicity, data = clinicV24)
+summary(group_mod2)
+confint(group_mod2)
+anova(group_mod2)
+
+#RYGB compared to nonsurgery had 12.77 less BMI (pvalue=0.004) adjusted for sex race and ethnicity #Sleeve compared to nonsurgery had 6.37 less BMI (pvalue = 0.01) adusted for sex race and ethinicty
+```
+
+
+#Statistical Analysis of AUC Insulin and HBA1C
+```{r}
+#Linear Model with only Insulin at 12 months
+#Reduced Model 
+insulinmodel <- lm(`AUC Insulin`~1, data= clinicV12)
+summary(insulinmodel)
+
+#Linear Model with only Insulin at 12 months
+ins1 <- lm(`AUC Insulin`~ `Surgical Status`, data= clinicV12)
+summary(ins1)
+drop1(ins1,~.,test = "F")
+AIC(ins1)
+ 
+
+ins2 <- lm(`AUC Insulin`~ `Surgical Status`+ Sex + Race, data= clinicV12)
+summary(ins2)
+confint(ins2)
+drop1(ins2,~.,test = "F") #significant
+AIC(ins2)
+#p-value 0.014; 7489 less than nonsurgery at 12 months adjusted for sex and race
+#95 % CI [-13337.134, -1640.460]
+#AIC(ins9) with ethnicity but higher AIC- not needed
+
+ins3 <- lm(`AUC Insulin`~ `Surgical Status`+BMI, data= clinicV12)
+summary(ins3)
+confint(ins3)
+AIC(ins3)
+
+
+ins4 <- lm(`AUC Insulin`~ `Surgical Status`+ Sex + Race + Ethnicity , data= clinicV12)
+summary(ins4)
+AIC(ins4)
+#will use ins2 model for 12 months
+
+
+################################
+#Linear Model with only Insulin at 24 months
+ins5 <- lm(`AUC Insulin`~ `Surgical Status`, data= clinicV24)
+summary(ins5)
+confint(ins5)
+#surgery group 7460 less AUC Insulin than nonsurgery group but not significant (pvalue=0.14)
+#95% CI: [-17704.53,  2785.362]
+drop1(ins5,~.,test = "F")
+#Non-significant at 24 months
+ 
+
+ins6 <- lm(`AUC Insulin`~ `Surgical Status`+ Sex + Race, data= clinicV24)
+summary(ins6)
+confint(ins6)
+#surgery group 11072 less Insulin that nonsurgery group after adjusting for sex and race but not significant (pvalue of 0.09)
+#95% CI: [-24084.635 , 1939.758]
+drop1(ins6,~.,test = "F") #significant
+AIC(ins6)
+
+
+
+ins7 <- lm(`AUC Insulin`~ `Surgical Status`+ Sex + Race + Ethnicity , data= clinicV24)
+summary(ins7)
+confint(ins7)
+AIC(ins7)
+#surgery group -12004 less Insulin that nonsurgery group after adjusting for race ethnicity and sex, (pvalue 0.056) close to being significant 
+#95% CI [-24367.08  , 358.7724]
+```
+#Analysis of HBA1C
+```{r}
+h_reduced <- lm(HBA1c ~ 1, data = clinicV24)
+summary(h_reduced)
+h_model <- lm(HBA1c~ `Surgical Status`, data = clinicV24)
+
+summary(h_model)
+
+#those with surgery saw hba1c of 0.0426 less than those without surgery but not significant
+
+full_h_model <- lm(HBA1c~ `Surgical Status`+Race+Sex, data = clinicV24)
+summary(full_h_model)
+#after adjusting for Race and Sex hba1c was 0.162 less for those with surgery but not significant
+
+```
+#Analysis of Bone Mineral Density 
+
+```{r}
+#Total Body BMD
+simple_total_model <- lm(`Total Body BMD`~`Surgical Status`, clinicV24)
+summary(simple_total_model)
+#Adjusted model
+total_model <- lm(`Total Body BMD`~`Surgical Status`+Race+Sex+`History of Bone Fractures`, clinicV24)
+summary(total_model)   
+anova(total_model)
+#Total BMD is not significant 
+#total body bmd is 0.026 less for those who under went surgery but not significant (pvalue = 0.29)
+
+
+#Femoral Neck BMD
+neck_model <- lm(`Femoral Neck BMD`~`Surgical Status`, data = clinicV24)
+summary(neck_model)
+anova(neck_model)
+#Neck is Significant
+adj_neck_model <- lm(`Femoral Neck BMD`~`Surgical Status`+Sex+Race+`History of Bone Fractures`, data = clinicV24)
+anova(adj_neck_model)
+summary(adj_neck_model)
+confint(adj_neck_model)
+#Neck BMD is .11 less (pvalue: 0.009) for those who under went surgery adjusted for Sex, race and history of bone fractures 95% CI[-0.186040224, -0.02739841]
+
+
+#Total Hip BMD
+hip_model <- lm(`Total Hip BMD`~`Surgical Status`, data=clinicV24)
+summary(hip_model)
+anova(hip_model)
+#Hip is significant
+adj_hip_model <- lm(`Total Hip BMD`~`Surgical Status`+Sex+Race+`History of Bone Fractures`, data = clinicV24)
+summary(adj_hip_model)
+anova(adj_hip_model)
+confint(adj_hip_model)
+#Hip BMD is 0.147 less (pvalue: <0.001) for those who under went surgery adjusted for Sex, race and history of bone fractures 95% CI[-0.22376063, -0.07186928]
+
+
+#Lumbar Spine BMD
+spine_model <- lm(`Lumbar Spine BMD`~`Surgical Status`, data = clinicV24)
+summary(spine_model)
+anova(spine_model)
+#Not significant 
+adj_spine_model <- lm(`Lumbar Spine BMD`~`Surgical Status`+Sex+Race+`History of Bone Fractures`, data=clinicV24)
+summary(adj_spine_model)
+anova(adj_spine_model)
+#surgery group had -0.029 less (pvalue= 0.35) lubmar spine bmd than nonsurgeyr group adjusted for sex race and history of bone fractures but not significant 
+
+```
+#Combine and Save plots
+```{r}
+combined_plot <- plot_grid(group_plot, time_plot, surgery_plot, nrow = 2, ncol = 2)
+combined_plot
+
+#ggsave(combine.plots, plot= combined_plot)
+```
+
+#Summary Tables
+```{r}
+#Baseline
+summary_table_B <- clinicV0 %>%
+  group_by(`Surgical Status`) %>%
+  summarize(
+    n = n(),
+    Age_mean = mean(`Age at Visit`, na.rm = TRUE),
+    Age_iqr = IQR(`Age at Visit`, na.rm = TRUE),
+    Age_sd = sd(`Age at Visit`, na.rm = TRUE),
+    BMI_mean = mean(BMI, na.rm = TRUE),
+    BMI_iqr = IQR(BMI, na.rm = TRUE),
+    BMI_sd = sd(BMI, na.rm = TRUE),
+    AUC_Insulin_mean = mean(`AUC Insulin`, na.rm = TRUE),
+    AUC_Insulin_iqr = IQR(`AUC Insulin`, na.rm = TRUE),
+    AUC_Insulin_sd = sd(`AUC Insulin`, na.rm = TRUE),
+    HBA1c_mean = mean(HBA1c, na.rm = TRUE),
+    HBA1c_iqr = IQR(HBA1c, na.rm = TRUE),
+    HBA1c_sd = sd(HBA1c, na.rm = TRUE),
+    Total_BMD_mean = mean(`Total Body BMD`, na.rm = TRUE),
+    Total_BMD_iqr = IQR(`Total Body BMD`, na.rm = TRUE),
+    Total_BMD_sd = sd(`Total Body BMD`, na.rm = TRUE)
+  )
+summary_table_B
+
+
+formatted_tables_B <- list()
+
+for (group in unique(clinicV0$`Surgical Status`)) {
+  group_data <- summary_table_B %>%
+    filter(`Surgical Status` == group)
+
+  formatted_table_B <- group_data %>%
+    gt() %>%
+    tab_header(
+      title = paste("Summary Statistics for Surgical Status", group)
+    ) %>%
+    cols_label(
+      `Surgical Status` = "Surgical Status",
+      n = "n",
+      Age_mean = "Age Mean",
+      BMI_mean = "BMI Mean",
+      BMI_iqr = "BMI IQR",
+      BMI_sd = "BMI SD",
+      AUC_Insulin_mean = "AUC Insulin Mean",
+      AUC_Insulin_sd = "AUC Insulin SD",
+      HBA1c_mean = "HBA1c Mean",
+      HBA1c_sd = "HBA1c SD",
+      Total_BMD_mean = "Total BMD Mean",
+      Total_BMD_iqr = "Total BMD IQR",
+      Total_BMD_sd = "Total BMD SD"
+    ) %>%
+    fmt_number(
+      columns = c("n", "Age_mean", "Age_iqr", "Age_sd", "BMI_mean", "BMI_iqr", "BMI_sd", "AUC_Insulin_mean", "AUC_Insulin_iqr", "AUC_Insulin_sd", "HBA1c_mean", "HBA1c_iqr", "HBA1c_sd", "Total_BMD_mean", "Total_BMD_iqr", "Total_BMD_sd"),
+      decimals = 2
+    )
+    
+  
+}
+
+formatted_tables_B
+```
+
+```{r}
+#24 Months
+summary_table_24 <- clinicV24 %>%
+  group_by(`Surgical Status`) %>%
+  summarize(
+    n = n(),
+    Age_mean = mean(`Age at Visit`, na.rm = TRUE),
+    Age_iqr = IQR(`Age at Visit`, na.rm = TRUE),
+    Age_sd = sd(`Age at Visit`, na.rm = TRUE),
+    BMI_mean = mean(BMI, na.rm = TRUE),
+    BMI_iqr = IQR(BMI, na.rm = TRUE),
+    BMI_sd = sd(BMI, na.rm = TRUE),
+    AUC_Insulin_mean = mean(`AUC Insulin`, na.rm = TRUE),
+    AUC_Insulin_iqr = IQR(`AUC Insulin`, na.rm = TRUE),
+    AUC_Insulin_sd = sd(`AUC Insulin`, na.rm = TRUE),
+    HBA1c_mean = mean(HBA1c, na.rm = TRUE),
+    HBA1c_iqr = IQR(HBA1c, na.rm = TRUE),
+    HBA1c_sd = sd(HBA1c, na.rm = TRUE),
+    Total_BMD_mean = mean(`Total Body BMD`, na.rm = TRUE),
+    Total_BMD_iqr = IQR(`Total Body BMD`, na.rm = TRUE),
+    Total_BMD_sd = sd(`Total Body BMD`, na.rm = TRUE)
+  )
+summary_table_24
+
+
+formatted_tables_24 <- list()
+
+for (group in unique(clinicV24$`Surgical Status`)) {
+  group_data <- summary_table_24 %>%
+    filter(`Surgical Status` == group)
+
+  formatted_table_24 <- group_data %>%
+    gt() %>%
+    tab_header(
+      title = paste("Summary Statistics for Surgical Status", group)
+    ) %>%
+    cols_label(
+      `Surgical Status` = "Surgical Status",
+      n = "n",
+      Age_mean = "Age Mean",
+      BMI_mean = "BMI Mean",
+      BMI_iqr = "BMI IQR",
+      BMI_sd = "BMI SD",
+      AUC_Insulin_mean = "AUC Insulin Mean",
+      AUC_Insulin_sd = "AUC Insulin SD",
+      HBA1c_mean = "HBA1c Mean",
+      HBA1c_sd = "HBA1c SD",
+      Total_BMD_mean = "Total BMD Mean",
+      Total_BMD_iqr = "Total BMD IQR",
+      Total_BMD_sd = "Total BMD SD"
+    ) %>%
+    fmt_number(
+      columns = c("n", "Age_mean", "Age_iqr", "Age_sd", "BMI_mean", "BMI_iqr", "BMI_sd", "AUC_Insulin_mean", "AUC_Insulin_iqr", "AUC_Insulin_sd", "HBA1c_mean", "HBA1c_iqr", "HBA1c_sd", "Total_BMD_mean", "Total_BMD_iqr", "Total_BMD_sd"),
+      decimals = 2
+    )
+    
+  formatted_tables_24[["nonSurgery"]] <- formatted_table_24
+}
+
+formatted_tables_24
+```
+
+```{r}
+#Overall Summary
+sum_table <- clinic_df %>%
+  filter(Visit %in% c(0, 12, 24)) %>%
+  group_by(Visit, `Surgical Status`) %>%
+  summarize(
+    BMI_mean = mean(BMI, na.rm = TRUE),
+    BMI_sd = sd(BMI, na.rm = TRUE),
+    HBA1c_mean = mean(HBA1c, na.rm = TRUE),
+    HBA1c_sd = sd(HBA1c, na.rm = TRUE),
+    Insulin_mean = mean(`AUC Insulin`, na.rm = TRUE),
+    Insulin_sd = sd(`AUC Insulin`, na.rm = TRUE)
+  )
+format_table <- sum_table %>%
+  gt() %>%
+  tab_header(
+    title = "Summary Statistics by Time Point and Surgical Status"
+  ) %>%
+  cols_label(
+    Visit = "Visit",
+    `Surgical Status` = "Surgical Status",
+    HBA1c_mean = "HBA1c Mean",
+    HBA1c_sd = "HBA1c SD",
+    Insulin_mean = "Insulin Mean",
+    Insulin_sd = "Insulin SD",
+    BMI_mean = "BMI Mean",
+    BMI_sd = "BMI SD"
+  ) %>%
+  fmt_number(
+    columns = c(HBA1c_mean, HBA1c_sd, Insulin_mean, Insulin_sd, BMI_mean, BMI_sd),
+    decimals = 2
+  )
+
+# Display the formatted table
+format_table
+```
+
+```{r}
+combined_data_frame_B <- bind_rows(formatted_tables_B)
+```
+```{r}
+library(dplyr)
+library(gt)
+
+sum_table <- clinic_df %>%
+  filter(Visit %in% c(0, 12, 24)) %>%
+  group_by(Visit, `Surgical Status`) %>%
+  summarize(
+    BMI_mean = mean(BMI, na.rm = TRUE),
+    BMI_sd = sd(BMI, na.rm = TRUE),
+    HBA1c_mean = mean(HBA1c, na.rm = TRUE),
+    HBA1c_sd = sd(HBA1c, na.rm = TRUE),
+    Insulin_mean = mean(`AUC Insulin`, na.rm = TRUE),
+    Insulin_sd = sd(`AUC Insulin`, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+formatted_table <- sum_table %>%
+  gt() %>%
+  tab_header(
+    title = "Summary Statistics by Time Point and Surgical Status"
+  ) %>%
+  cols_label(
+    Visit = "Visit",
+    `Surgical Status` = "Surgical Status",
+    BMI_mean = "BMI Mean",
+    BMI_sd = "BMI SD",
+    HBA1c_mean = "HBA1c Mean",
+    HBA1c_sd = "HBA1c SD",
+    Insulin_mean = "Insulin Mean",
+    Insulin_sd = "Insulin SD"
+  ) %>%
+  fmt_number(
+    columns = vars(BMI_mean, BMI_sd, HBA1c_mean, HBA1c_sd, Insulin_mean, Insulin_sd),
+    decimals = 2
+  )
+
+# Display the formatted table
+formatted_table
+
+```
+
+#Forest plot
+```{r}
+model_labels <- c("BMI", "12-month Insulin", "24-month Insulin", "HBA1c", "Total Body BMD", "Femoral Neck BMD", "Total Hip BMD", "Lumbar Spine BMD")
+p_values <- c(0.0018, 0.014, 0.056, 0.162, 0.29, 0.009, 0.0004,0.35)
+
+# Determine which p-values are significant
+significant <- p_values < 0.05
+
+#order the labels
+ordered_labels <- c("BMI", "12-month Insulin", "24-month Insulin", "HBA1c", "Total Body BMD", "Femoral Neck BMD", "Total Hip BMD", "Lumbar Spine BMD")
+ordered_labels <- rev(ordered_labels)
+plot_data <- data.frame(labels = model_labels, p_values = p_values)
+
+# Add a column to identify significant and non-significant p-values
+plot_data$significance <- ifelse(plot_data$p_values < 0.05, "Significant", "Non-significant")
+
+# Create the forest plot using ggplot2
+forest_plot_pvalues <- ggplot(plot_data, aes(x = factor(labels, levels = ordered_labels), y = p_values, color = significance)) +
+  geom_point(size = 3) +
+  geom_segment(aes(x = factor(labels, levels = ordered_labels), xend = factor(labels, levels = ordered_labels), y = 0, yend = p_values), linetype = "solid", color = "grey") +
+  theme_classic() +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1)) +
+  scale_color_manual(values = c("Significant" = "red", "Non-significant" = "black")) +
+  labs(title = "Forest Plot of P-values", x = "Model", y = "P-value") +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "blue") +
+  coord_flip()
+forest_plot_pvalues
+
+```
+
+
+
+
+
+
+
+

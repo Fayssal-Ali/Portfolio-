@@ -1,0 +1,53 @@
+"libname hw7 '/home/u60701163/Public Health 6853/6853/Week-11';
+*2;"
+"data glow;
+set hw7.glow1(in=site1) hw7.glow2(in=site2) hw7.glow3(in=site3) hw7.glow4(in=site4) hw7.glow5(in=site5) hw7.glow6(in=site6);
+if site1 = 1 then site_id=1; if site2 = 1 then site_id=2; if site3 = 1 then site_id=3; if site4 = 1 then site_id=4; if site5 = 1 then site_id=5; if site6 = 1 then site_id=6;
+array miss[3] height weight age; do i= 1 to 3;
+if miss[i] in (999) then miss[i]= .;
+end;
+array miss_char[3] momfrac raterisk priorfrac; do i =1 to 3;
+if miss_char[i] in (""NA"") then miss_char[i]= "" "";
+end;
+bmi= (weight/(height/100)**2);
+if  age= . or bmi = . then age_bmicat=.;
+else if age <= 65 and (bmi < 18 or bmi >25) then age_bmicat = 1; else if age <= 65 and (18 < bmi < 25) then age_bmicat = 2;
+else if age > 65 and (bmi < 25 or bmi >30) then age_bmicat  = 3; else if age > 65 and (25 < bmi < 30) then age_bmicat = 4;
+run;"
+		
+*3;		
+proc sort data=glow;
+by descending Fracture descending priorfrac;"		
+proc freq data=glow order=data;
+table Fracture*priorfrac/chisq relrisk;
+run;		
+		
+*4;	
+proc logistic data=glow (where=(priorfrac~="" "")) descending; class  priorfrac(param=ref ref=""No"");
+model Fracture = priorfrac /clodds=wald;
+run;
+*5;	
+proc logistic data=glow (where=(age_bmicat~=.)) descending; class  age_bmicat(param=ref ref=""1"");
+model Fracture = age_bmicat /clodds=wald;
+run;
+********PART 2;
+
+*6A;	
+data muscatine_wide(drop=occasion Y age baseage); set hw7.muscatine; by id;
+array o[3] o1-o3; array a[3] a1-a3; o[occasion] = y; a[occasion] =
+retain o1-o3;
+
+"retain a1-a3; if last.id = 1; run;"
+"*6B;"		
+"proc logistic data=muscatine_wide descending;
+class gender (param=ref ref=""0"") o2 (param=ref ref=""0""); model o3 = gender o2 a2/clodds=wald;
+run;"		
+"proc logistic data=muscatine_wide descending;
+class gender (param=ref ref=""0"") o2 (param=ref ref=""0""); model o3 = gender o2 a2/clodds=wald;
+units a2=2;
+run;"		
+		
+"*6C;"	
+proc logistic data=muscatine_wide descending;
+class gender (param=ref ref=""0"") o2 (param=ref ref=""0"") a2(param=ref ref=""8"") ; mode
+run;		

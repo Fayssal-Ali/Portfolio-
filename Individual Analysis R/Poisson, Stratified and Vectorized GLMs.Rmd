@@ -1,0 +1,607 @@
+---
+title: "Poisson, Stratified and Vectorized GLMs"
+author: "Prof Jay Klopper"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd(getwd())
+```
+
+
+```{r}
+library(readr)
+library(hms)
+library(dplyr)
+library(tibbletime)
+library(timetk)
+library(lubridate)
+library(ggplot2)
+library(epiR)
+library(survival)
+library(Stat2Data)
+library(lmtest)
+library(ResourceSelection)
+library(VGAM)
+library(brant)
+```
+
+
+
+
+A matched case-control study was conducted to investigate various factors associated with the occurrence of bone fractures in women.  Data from this study are in the file `casecont11_data.csv`. Cases correspond to women who have had a bone fracture in the past year while controls correspond to women who have not.Cases and controls were matched on age. The data set contains the following variables of interest.
+
+| Variable    | Description                                           |
+|:------------|:------------------------------------------------------|
+| _FRACTURE_  | $1$ if fracture in last year, $0$ otherwise           |
+| _PAIR_      | identifier for each matched pair                      |
+| _WEIGHT_    | weight in pounds                                      |
+| _BMI_       | body mass index $[kg/m^{2}]$                          |
+| _PRIORFRAC_ | $1$ if history of prior fracture, $0$ otherwise       |
+| _MOMFRAC_   | $1$ if mother had hip fracture, $0$ otherwise         |
+| _ARMASSIST_ | $1$ if arms needed to stand from chair, $0$ otherwise |
+
+
+```{r}
+case <- readr::read_csv("casecont11_data.csv")
+
+#119 matched pairs 
+```
+
+
+
+Accounting for the matching, fit a logistic regression model with _FRACTURE_ as the binary response and with all of the remaining variables from the data set (shown in the table above) as predictors in the model. Using standardized versions of both the _WEIGHT_ and _BMI_ in y
+
+
+```{r}
+mod1 <- survival::clogit(
+  FRACTURE ~  PRIORFRAC +ARMASSIST +MOMFRAC + WEIGHT+ BMI+ strata(PAIR),
+  data = case
+)
+summary(mod1)
+
+#Likelihood ratio test= 25.3  on 5 df,   p=<0.001
+#collectively the explanatory variables contribute significantly to the separation of cases and controls
+```
+
+
+
+
+
+
+```{r}
+            #Estimated OR    95%Confidence Interval 
+#PRIORFRAC    2.3046        (1.1844    4.4845) 
+#For subjects from the same matched pair, the odds of a prior fracture leading to a fracture in the past year is 2.3 times the odds of no prior fracture history leading to a fracture, adjusting for other variables in the model. The odds can be as low as 1.18 or as high as 4.48 times when comparing those with a history of a prior fracture and those without a history of a prior fracture 
+
+#ARMASSIST    2.4321        (1.1855    4.9896)
+#MOMFRAC      2.0680        (0.9272    4.6125)
+#BMI          1.2491        (1.0658    1.4640)
+
+#WEIGHT       0.9096        (0.8578    0.9646) 
+#For subjects from the same matched pair, for every pound increase in weight the odds of a fracture in the past year are 0.91 times greater (or 9% less) after adjusting for other variables in the model. Odds can increase by as low as 0.88 or high as 0.96 greater(or as low as 12% less or as high as 4% less for every increase in weight. )
+```
+
+
+
+```{r}
+mod1.2 <- survival::clogit(
+  FRACTURE ~  PRIORFRAC +ARMASSIST +MOMFRAC + WEIGHT+ I(WEIGHT^2)+ BMI+ strata(PAIR),
+  data = case
+)
+summary(mod1.2)
+
+#wald-stat: -0.448 | p-value: 0.65 > 0.01
+#Conclude weight does not have a quadratic relationship with the log odds of a fracture. 
+
+#Empirical logits plot:
+summary(case$WEIGHT)
+emplogitplot1(FRACTURE ~ WEIGHT, data = case, ngroups = 12)
+```
+
+
+
+Radioactive radon (radon-222) is an inert gas that can migrate from soil and rock and accumulate in enclosed areas such as mines and homes.  When inhaled it can rapidly diffuse throughout the body.  Due to the relatively high flow rate of blood in bone marrow, this may be a biologically plausible mechanism for the development of leukemia.
+
+A case-control study was conducted to assess the association between case-control status (leukemia vs. no leukemia) and the following variables: (1) extended exposure to radon-222 (with level _yes_ vs. _no_),  (2) binary biological sex (with levels _male_ vs. _female_), (3) race ( with levels _black_, _white_, _other_), (4) Down syndrome (with levels _yes_ vs. _no_).
+
+
+```{r}
+#24 combinations
+
+#Exposure   Race     Sex     DS
+
+#Yes         White    Male    Yes
+#Yes         White    Male    No           
+#Yes         White    Female  Yes
+#Yes         White    Female   No
+#Yes         Black    Male    Yes
+#Yes         Black    Male    No
+#Yes         Black    Female  Yes
+#Yes         Black    Female   No
+#Yes         Other    Male    Yes
+#Yes         Other    Male    No
+#Yes         Other    Female  Yes
+#Yes         Other    Female   No
+
+#No         White    Male    Yes
+#No         White    Male    No           
+#No         White    Female  Yes
+#No         White    Female   No
+#No         Black    Male    Yes
+#No         Black    Male    No
+#No         Black    Female  Yes
+#No         Black    Female   No
+#No         Other    Male    Yes
+#No         Other    Male    No
+#No         Other    Female  Yes
+#No         Other    Female   No
+```
+
+
+
+Saturated logistic model with case-control status as the binary response.  Let $\pi \left( x_{1}, x_{2}, x_{3}, x_{4}, x_{5} \right)$ be the probability of being a case.
+
+| Predictor      | Variable | Encoding                          |
+|:---------------|:---------|:----------------------------------|
+| Radon exposure | $x_{1}$  | $1$ for _yes_ and $0$ for _no_    |
+| Biological sex | $x_{2}$  | $1$ for _male_ and $0$ for _no_   |
+| Race (black)   | $x_{3}$  | $1$ for _black_ and $0$ otherwise |
+| Race (white)   | $x_{4}$  | $1$ for _white_ and $0$ otherwise |
+| Down syndrome  | $x_{5}$  | $1$ for _yes_ and $0$ for _no_    |
+
+```{r}
+#log(Y)= B0+B1x1+B1x2+B3x3+B4x4+B5x5+
+#B6x1x2+B7x1x3+B8x1x4+B9x1x5+
+#B10x2x3+B11x2x4+B12x2x5+
+#B13x3x4+B14x3x5+
+#B15x4x5+
+#B16x1x2x3+B17x1x2x4+B18x1x2x5+
+#B19x1x3x4+B20x1x3x5+
+#B21x2x3x4+B22x2x3x5+
+#B23x3x4x5
+
+#This would lead to sparsness, which does not have enough to properly interpret of predict the data
+```
+
+                                        
+
+
+
+The file `toxicity_data.csv` contains data on an experiment that sought to characterize the association between the dosage of a certain drug and signs of toxicity in mice. I
+
+| Variable          | Meaning                         | Coding                                                         |
+|:------------------|:--------------------------------|:---------------------------------------------------------------|
+| dose              | treatment dose                  | low, medium (med), or high; set low as the reference level |
+| sex               | mouse sex                       | male or female; set male as the reference level                |
+| $\mathtt{tox\_S}$ | number of mice with toxicity    | numerical value                                                |
+| $\mathtt{tox\_F}$ | number of mice without toxicity | numerical value                                                |
+
+
+
+| Model                            | Number of parameters | $G_{\text{GOF}}^{2}$ | df for GOF test | GOF _p_ value | AIC |
+|:---------------------------------|:---------------------|:---------------------|:----------------|:-----------------|:----|
+| Saturated                        |      6              | XXX                  | XXX             | XXX              | 30.02|
+|Intercept Only                    |      1               |      22.65          |      5           |     <0.001      |42.675|
+| Only _dose_ predictor            |      3               |      1.49           |      3           |      0.68        |25.5 |
+| Only _sex_ predictor             |      2               |      22.3           |      4           |      <0.001      |44.3 |
+| Both _dose_ and _sex_ predictors |      4               |      1.08           |      2           |    0.58          |27.1 |
+```{r}
+tox <- readr::read_csv("toxicity_data.csv")
+```
+ 
+
+
+
+
+```{r}
+#Saturated model
+mod3 <- glm(cbind(tox_S,tox_F) ~  dose*sex,
+family = binomial(link = "logit"), data = tox)
+summary(mod3)
+#AIC:30.02
+
+#Intercept only
+mod3.1 <- glm(cbind(tox_S,tox_F) ~  1,
+family = binomial(link = "logit"), data = tox)
+summary(mod3.1)
+#AIC:42.675
+lrtest(mod3.1, mod3)
+lmtest::lrtest(mod3.1,mod3)
+#LRT:22.65 | p-value <0.001
+#df:5
+#Conclude this model does not fit the data well
+
+#Only Dose
+mod3.2 <- glm(cbind(tox_S,tox_F) ~  dose,
+family = binomial(link = "logit"), data = tox)
+summary(mod3.2)
+#AIC:25.5
+lrtest(mod3.2, mod3)
+#LRT:1.5 | p-value = 0.68
+#df:3
+#Conclude this model fits the data well
+
+#Only Sex
+mod3.3 <- glm(cbind(tox_S,tox_F) ~ sex,
+family = binomial(link = "logit"), data = tox)
+summary(mod3.3)
+#AIC:44.3
+lrtest(mod3.3, mod3)
+#LRT:22.3 | p-value = <0.001
+#df: 4
+#Conclude this model does not fit the data well
+
+#both sex and dose
+mod3.4 <- glm(cbind(tox_S,tox_F) ~  dose+sex,
+family = binomial(link = "logit"), data = tox)
+summary(mod3.4)
+#AIC:27.1
+lrtest(mod3.4, mod3)
+#LRT:1.08 p-value 0.58 
+#df=2 
+#conclude this model does fit the data well
+```
+
+
+
+
+```{r}
+rstandard(mod3.3)
+#group 1 2 5 and 6
+
+#group1: low does female 
+#group2: low dose male
+#group5: high dose female 
+#group6: high dose male
+
+#groups 1 and 2 have standardized residuals < -2
+#groups 5 and 6 have standardized residuals > 2
+```
+
+
+
+
+
+```{r}
+#Model with only sex and dose varibles seems to fit the data the best. This model has the lowest AIC score of 27.1, less parameters than the saturated model and a g^2 statistic of 1.08 that showes this model fits the data well enough.
+```
+
+
+
+
+```{r}
+summary(mod3.4)
+exp(summary(mod3.4)$coeff)
+exp(confint(mod3.4))
+#Mice with low dosage have 93% less odds of toxicity, with a 95% CI as low as 98.5% less and high as 76%, less compared to high dosage mice after adjusting for sex. 1 is not included in the confidence interval, therefore this is significant 
+
+#Mice with medium dosage have 57% less odds of toxicity, with a 95% CI as low as 83% less and high as 6% greater, compared to high dosage mice after adjusting for sex. Ci includes 1, therefore this is not significant. 
+
+
+#Male mice 1.32 times greter odds of toxcicity compared to female mice, after adjusting for dose. 95% CI is low as 0.57 times and high as 3.12 times greater odds of toxcicity. Confidence Interval incldes 1, therefore this is not significant
+
+```
+
+
+
+
+The csv file `mus14data.csv` contains data from a cross sectional survey of $3206$ individuals on Medicare. Use the code below to create one of the variables needed to complete this problem.  
+
+| Variable           | Explanation                                           |
+|:-------------------|:------------------------------------------------------------|
+| _private_ 	       | $1$ if has private supplemental insurance and $0$ otherwise |
+| _retire_           | $1$ if retired, $0$ otherwise |
+| _age_     	       | age in years                                                |
+| _hstatusg_         | $1$ if good health status, $0$ otherwise                    |
+| _hhincome_         | annual household income in thousands of dollars             |
+| _qhhinc_           | quartile of annual household income in thousands of dollars, $[0,17], (17,31.1], (31.1,52.8], (52.8,1312.124]$ |
+| _educyear}_	       | years of education  |
+| _married_          | $1$ if married, $0$ otherwise     |
+| _hisp_             | $1$ if Hispanic ethnicity, $0$ otherwise |
+
+```{r message=FALSE, warning=FALSE}
+hrs <- readr::read_csv("mus14data.csv")
+hrs <- 
+  hrs %>% 
+  mutate(qhhinc = cut(hhincome, breaks = c(0, 17.001, 31.104, 52.800, 1312.124))) 
+```
+
+
+
+Choose to conduct the Hosmer-Lemeshow test for goodness of fit, you should split the predicted probabilities into $10$ deciles in order to compute the test statistic.
+
+```{r}
+mod4 <- glm(
+  formula = private ~ retire+ hstatusg+ hhincome + educyear + married + hisp + age,
+  data = hrs,
+  family = binomial(link = "logit")
+)
+
+summary(mod4)
+
+hl_test<- ResourceSelection::hoslem.test(
+  mod4$y,fitted(mod4),g = 10)
+hl_test
+
+#HL stat: 31.25 | p-value:<0.001
+#reject the null hypothesis. conclude enough evidence that the model does not fit the data well.
+```
+
+
+
+
+Refit the model from above, but instead of using the numerical _hhincome_ variable, use the $4$-level categorical variable _qhhinc_.  
+```{r}
+mod4.2 <- glm(
+  formula = private ~ retire+ hstatusg+ qhhinc + educyear + married + hisp + age,
+  data = hrs,
+  family = binomial(link = "logit")
+)
+
+summary(mod4.2)
+
+hl_test2<- ResourceSelection::hoslem.test(
+  mod4.2$y,fitted(mod4.2),g = 10)
+hl_test2
+
+#HL stat: 6.54 | p-value:0.59
+#fail to reject the null hypothesis. conclude enough evidence that the model fits the data well.
+```
+
+
+
+
+A researcher wants to investigate the impact of an intervention on smoking status. In this hypothetical study, $100$ participants were recruited to take part, consisting of $50$ smokers and $50$ non-smokers.
+
+All participants watched a video showing the impact that deaths from smoking-related cancers had on families.
+
+Two weeks after this video intervention, the same participants were asked whether they remained smokers or non-smokers.  The data from this study are provided in the table below.
+
+<table cellpadding = "2">
+         <tr>
+            <td colspan = "4" style="text-align:center"> After </td>
+         </tr>
+         <tr>
+            <td colspan = "2"></td>
+            <td> Non-smoker </td>
+            <td> Smoker </td>
+         </tr>
+         <tr>
+            <td rowspan = "2"> Before </td>
+            <td> Non-smoker </td>
+            <td> 40 </td>
+            <td> 10 </td>
+         </tr>
+            <td> Smoker </td>
+            <td> 32 </td>
+            <td> 18 </td>
+         </tr>
+</table>
+
+### Question 1 [3 points]
+
+What are the matched pairs in this study?
+
+```{r}
+#Smokers and non-smokers
+```
+
+What proportion of subjects were smokers before the study?  What proportion of subjects were smokers two weeks after viewing the video?
+
+```{r}
+#before: 50/100
+#after: 72/100
+```
+
+
+#Mcnemar Test
+```{r}
+smoke_table <- matrix(c(40, 10, 32, 18), nrow = 2)
+
+mcnemar.test(smoke_table, correct = FALSE)
+#Reject the null, conclude there is an associaation between viweing the video and smoking status
+```
+
+
+```{r}
+smoker <- readr::read_csv("smoker_data.csv")
+
+smoker <- smoker %>% mutate(status = case_when(status == "nonsmoker" ~ 0, status == "smoker" ~ 1),
+                                      status = factor(status, levels = c(0,1)))
+smoker <- smoker %>% mutate(time = case_when(time == "before" ~ 0, time == "after" ~ 1),
+                                      time = factor(time, levels = c(0,1)))
+
+stratified_tables <- table(
+  time = smoker$time,
+  status = smoker$status, 
+  pairs = smoker$pair)
+
+epiR::epi.2by2(stratified_tables)
+#OR= 0.31 95% CI(0.15, 0.64)
+#The odds of becoming a non-smoker are 79% less after watching the video when compared to before watching the video
+
+```
+
+
+
+
+A study of $44$ physicians working in the emergency room at a large hospital was conducted to examine the factors associated with the number of patient complaints that were received in the previous year. Data from this study are contained in the file `complaint_data.csv`. Each row corresponds to the data from one physician over the past year. The variables in the data set are as follows.
+
+| Variable         | Explanation                                                                            |
+|:-----------------|:---------------------------------------------------------------------------------------|
+| _number_visits_  | number of patient visits (number of interactions with a patient)                       |
+| _complaints_     | number of complaints by patients against the physician                                 |
+| _residency_      | Y (yes) or N (no) - whether the physician did residency training in emergency services |
+| _gender_         | F (female) or M (male)                                                                 |
+| _revenue_        | revenue in dollars per hour                                                            |
+| _hours_          | work load at the emergency room in hours                                               |
+
+Use the code below to read in the data set, format the variables, and create the complaint rate and log(complaint rate) variables.
+
+```{r message=FALSE, warning=FALSE}
+complaint <- read_csv("complaint_data.csv")
+complaint <- complaint %>%
+  mutate(
+    residency = factor(residency, levels = c("Y", "N")),
+    gender = factor(gender, levels = c("M", "F")),
+    complaint_rate = complaints/number_visits,
+    log_complaint_rate = log(complaints/number_visits)
+  )
+```
+
+
+
+The code below generates a scatter plot of work load at the emergency room in hours vs. log of the complaint rate.
+
+
+```{r}
+library(ggplot2)
+
+complaint %>%
+ggplot(
+  aes(
+    x = hours,
+    y = log_complaint_rate
+  )
+) + geom_point() +
+  xlab("Hours") +
+  ylab("log(complaint rate)") +
+  theme_bw()
+```
+```{r}
+#Data seems to exhibit high variance and therfore overdispersion
+#There does appear to be a non-linear relationship 
+```
+
+
+
+Fit a Poisson regression model with complaint rate as the response and with hours as the predictor. 
+```{r}
+mod6 <- glm(
+  complaint_rate ~ hours,
+  data = complaint,
+  family = poisson(link = "log")
+)
+summary(mod6)
+#wald stat=0.44|p-value=0.965
+#fail to reject the null hypothesis and conclude there is not an assoiciation beween work load in hours and complaint rate
+
+#log(Y)= B0+B1(hours)
+#log(Y)= -7.51+0.0006134(hours)
+exp(-7.51+(0.0006134*200))
+#estimated complaint rate for 200 hours of work is 0.0006190528
+```
+
+
+```{r}
+mod6.1 <- glm(
+  complaint_rate ~ hours + residency + gender + revenue,
+  data = complaint,
+  family = poisson(link = "log")
+)
+summary(mod6.1)
+#wald stat=0.037|p-value=0.970
+#fail to reject the null hypothesis and conclude there is not an association beween work load in hours and complaint rate adjusting for training, gender, and revenue
+
+exp(0.0972151)
+#The odds of complaint rate are 1.10 times greater for those who did not complete residency training in emergencey services compared to those who did.
+
+```
+
+
+### Question 4 [7 points]
+
+Fit a quasi-Poisson model. 
+```{r}
+mod6.2 <- glm(
+  complaint_rate ~ hours + residency + gender + revenue,
+  data = complaint,
+  family = quasipoisson(link = "log")
+)
+summary(mod6.2)
+
+
+#Overdispersion check:
+reds <- resid(mod6.2, type = "pearson")
+reds[1:5]
+
+phi_hat <- sum(reds^2) / (length(reds) - 4 - 1)
+phi_hat
+
+#t-value: 1.562 p-value= 0.126
+#fail to reject the null and conclude there is no association bewttn works hours and complaint rate after adjusting for residency training, gender, and revenue.
+```
+
+
+
+
+Investigators consider the age of people with multiple chronic diseases and the healthcare plans in a European country. The data set is in the file `PlanAge.csv` and is imported below.
+
+```{r message=FALSE, warning=FALSE}
+plan <- readr::read_csv("PlanAge.csv")
+```
+
+The variables are as in the table below.
+
+| Variable | Explanation                                                                                  |
+|:---------|:---------------------------------------------------------------------------------------------|
+| _Plan_   | _No insurance_ if no healthcare insurance, _Plan A_ if on low plan, _Plan B_ if on high plan |
+| _Age_    | Age in years                                                                                 |
+
+
+
+```{r}
+#no insurane is baseline
+plan$Plan <- factor(plan$Plan, levels = c("No insurance", "Plan A", "Plan B"))
+
+mod7 <- VGAM::vglm(
+  formula = Plan ~ Age,
+  data = plan,
+  family = VGAM::multinomial(refLevel = 1) 
+)
+summary(mod7)
+#plan A model:
+#log(y)= 2.37 - 0.019619(age)
+#plan B:
+#log(y)= 5.99 - 0.09584(age)
+
+```
+
+```{r}
+#Plan A:
+exp(-0.01961)
+#For a patient with multiple chronic diseases that is v+1 years old, the odds that they have insurance plan A compared to no insurance is 0.98 times the odds for a patient that is v years old
+
+#Plan B:
+exp(-0.09584)
+#For a patient with multiple chronic diseases that is v+1 years old, the odds that they have insurance plan B compared to no insurance is 0.91 times the odds for a patient that is v years old
+```
+
+
+
+```{r}
+
+mod7.1 <- VGAM::vglm(
+  formula = Plan ~ 1,
+  data = plan,
+  family = VGAM::multinomial(refLevel = 1) 
+)
+
+VGAM::lrtest_vglm(
+  mod7,
+ mod7.1)
+#X^2=125.59 | p-value <0.001
+#Conclude there is an association between age and plan 
+```
+
+
+
+```{r}
+summary(mod7)
+#From the model:
+exp(0)/(exp(0)+exp(2.3715-(0.01961*50))+exp(5.9992-(0.09584*50)))
+#12% probability that a person with multiple chronic disease who is 50 years old, has no insurance.
+```
+

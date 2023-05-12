@@ -1,0 +1,271 @@
+---
+title: "Recurrence of breast-cancer"
+author: "Fayssal"
+date: "2022-10-19"
+output: html_document
+---
+
+
+Investigating the effect of the presence of nodecaps on the recurrence of breast-cancer from the UCI data repository, while also considering tumor malignancy grade as a possible effect modifier. 
+Malignancy grade will have three categorical levels (1,2,3). 
+
+Background:
+
+Breast cancer is the second leading cause of death among women worldwide. On Average 7-11% of women with early breast cancer will have a recurrence. Specifically the same cancer has reappeared, this is not a new form of cancer. One of the major signs of recurrence is the size of the malignant tumor. 
+
+Most malignant tumors are graded as  1, 2, 3, or 4. In grade 1 tumors, the cells look close to normal. The higher the number, the more abnormal the cells look. Grade 3-4 tumors look most abnormal.
+(Our dataset has tumor grades from 1-3)
+Finally, the Node-caps in our data-set distinguish those that cancer has spread to the lymph nodes.
+
+We will be exploring dataset found in the UCI repository there are 286 observations and with 6 variables. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(epitools)
+library(DescTools)
+library(epiR)
+library(emmeans)
+library(lmtest)
+
+
+breast_cancer <- read_csv("breast-cancer.csv", 
+     col_names = FALSE)
+
+bc <- breast_cancer[c(1,2,3,6,7,8)]
+
+colnames(bc) <- c("Cancer","AgeGroup","Menopause","nodecaps","malignancy","radiation")
+
+bc <- bc[!(bc$nodecaps=="?"),]
+```
+
+
+
+```{r cars}
+bc$Cancer <- factor(
+  bc$Cancer, levels =c("no-recurrence-events","recurrence-events")
+)
+
+bc$malignancy <- factor(
+  bc$malignancy, levels =c("1","2","3")
+)
+
+
+bc$nodecaps <- factor(
+  bc$nodecaps, levels =c("no","yes")
+)
+
+bc$AgeGroup <- factor(
+  bc$AgeGroup, levels =c("20-29","30-39","40-49","50-69", "60-69","70-79")
+)
+
+bc$Menopause <- factor(
+  bc$Menopause, levels =c("premeno", "ge40", "lt40")
+)
+
+
+bc$radiation <- factor(
+  bc$radiation, levels =c("left", "right")
+)
+
+```
+
+
+```{r }
+#Summary of raw numbers
+xtabs( ~ AgeGroup,data = bc)
+xtabs( ~ malignancy , data = bc)
+xtabs( ~ Cancer, data = bc)
+xtabs(~nodecaps, data= bc)
+xtabs(~radiation, data=bc)
+xtabs(~Menopause, data=bc)
+```
+
+```{r}
+#Create pooled table
+can <- table(bc$Cancer, bc$nodecaps)
+can
+```
+2X2
+```{r}
+crosstable::crosstable(
+  bc,
+  Cancer,
+  by=nodecaps,
+  total = "both",
+  percent_pattern="{n}"
+) %>%
+  crosstable::as_flextable(
+    keep_id = FALSE
+  )
+```
+```{r}
+epiR::epi.2by2(can)
+```
+#The odds of no-reccurrence of breast cancer in the no node-caps group is 316% higher 
+#when comapred to the recurrence-events
+
+
+#The odds of reccurrece of breast cancer in the yes node-caps group is 316% higher when comparred to no-reccurrence
+
+```{r}
+mal <- table(bc$Cancer, bc$malignancy)
+mal
+
+crosstable::crosstable(
+  bc,
+  Cancer,
+  by=malignancy,
+  total = "both",
+  percent_pattern="{n}"
+) %>%
+  crosstable::as_flextable(
+    keep_id = FALSE
+  )
+```
+
+```{r}
+#Stratified Table
+strat <- table(bc$Cancer, bc$nodecaps, bc$malignancy)
+strat
+
+
+DescTools::WoolfTest(strat)
+
+
+
+```
+
+#MH X2= 1.64 with a p-value of 0.44
+#Fail to reject the null hypothesis and conclude homogonous association between the straitifed tables
+#Not an effect modifier 
+
+#Check for confounding 
+
+```{r}
+mal <- table(bc$nodecaps, bc$malignancy)
+mal
+
+chisq.test(mal)
+```
+
+#Reject the null and conclude there is an association between node-caps and malignancy grade
+#Check if malignancy grade is the causal pathway of node-caps
+#Many articles suggest node-caps found in the lymph  nodes are a result of the malignant tumor spreading
+
+#Malignancy is not a effect modifier or confounder
+#Report crude numbers 
+
+```{r}
+ggbarstats(bc,
+          Cancer,
+           nodecaps,
+           type = "parametric",
+           xlab = "nodecaps",
+           title = "nodecaps by carcinoma diagnosis"
+)
+
+```
+
+```{r}
+ggbarstats(bc,
+          nodecaps,
+           Cancer,
+           type = "parametric",
+           xlab = "Carcinoma",
+           title = ""
+)
+
+```
+```{r}
+ggbarstats(bc,
+          malignancy,
+           Cancer,
+           type = "parametric",
+           xlab = "malignancy",
+           title = ""
+)
+```
+
+
+
+```{r}
+v <- glm(Cancer~ AgeGroup+malignancy+nodecaps+radiation+Menopause, 
+         data=bc, family = binomial(link = "logit"))
+summary(v)$coeff
+```
+Will focus on node-caps and malignancy 
+
+```{r}
+full <- glm(Cancer~ nodecaps + malignancy + nodecaps*malignancy, data=bc,
+         family= binomial(link = "logit" ))
+summary(full)$coeff
+```
+Model:
+log=-1.85 +1.53x 0.42z1 +1.50z2 -0.92xz1 
+log= -2.33 +0.42z1 +1.50z2 +(-0.92z1 +1.53)x
+#Test the reduced model without the interaction 
+
+```{r}
+redu <- glm(Cancer~ nodecaps + malignancy , data=bc,
+         family= binomial(link = "logit" ))
+summary(redu)$coeff
+```
+
+#LRT test
+#Testing H0: B4=0 (states Z is not an effect modifier)
+```{r}
+o <- glm(nodecaps~malignancy, data=bc,
+         family= binomial(link = "logit" ))
+summary(o)$coeff
+```
+#Not associated
+
+```{r}
+lmtest::lrtest(redu, full)
+```
+Fail to reject the null hypothesis and conclude that malignancy grade does not effect the association between nodecapes and breast cancer recurrence. (Not an effect modifier)
+
+#Report the crude measures 
+
+```{r}
+#Hypthesis testing
+em <- emmeans::emmeans(
+  mo,
+  ~ nodecaps | malignancy
+)
+
+emmeans::contrast(
+  em,
+  "consec",
+  name = "malignancy",
+  infer = c(TRUE, TRUE),
+  level = 0.95
+)
+```
+Note: There are not any obervations with nodecapes present and malaignant grade1.
+
+```{r}
+#Malignancy2
+exp(c(0.612, -.353,1.58))
+
+
+#Malignancy3
+exp(c(1.533, .525,2.54)) 
+
+emmeans::emmip(
+  full,
+  ~ nodecaps | malignancy
+)
+```
+
+#Final Conclusions:
+
+#Malignancy is not an effect modifier or confounder 
+
+#Report the crude measures of association between node-caps and reccurrence of breast cancer for this dataset
+
+#The prescence of a Malignancy grade 3 tumor is a strong predictor of the reccurrence of breast cancer 
+#in this dataset
+

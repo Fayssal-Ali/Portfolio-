@@ -1,0 +1,748 @@
+---
+title: "Various Categorical Analyses"
+author: "Fayssal Ali"
+date: "2023-03-01"
+output: html_document
+---
+
+#This RMD file will examine a range of epidemiological studies by employing diverse methodologies, including logistic models, machine learning algorithms, and assorted statistical tests, to identify associations and derive conclusions. To ensure confidentiality, all participant names in the studies have been redacted.
+
+```{r}
+setwd("~/Cat")
+```
+
+#Libraries
+```{r}
+library(DescTools)
+library(dplyr)
+library(gmodels)
+library(ggstatsplot)
+library(epiR)
+library(readr)
+library(psych)
+library(tibble)
+library(ggplot2)
+library(lmtest)
+library(Stat2Data)
+library(VGAM)
+library(MASS)
+library(brant)
+```
+
+
+#Exploring the association between Smoking and Cardiovascular disease
+```{r}
+ldl <- read_csv("Section2Part1.csv")
+describe(ldl)
+#LDL:
+xtabs( ~ LDL,data = ldl)
+ggplot(ldl) +
+  geom_bar(aes(x=LDL), fill = "green", width = .5)
+
+#Smoke:
+xtabs( ~ Smoke,data = ldl)
+ggplot(ldl) +
+  geom_bar(aes(x=Smoke ), fill = "brown", width = .5)
+
+#CAD:
+xtabs( ~ CAD,data = ldl)
+ggplot(ldl) +
+  geom_bar(aes(x=CAD ), fill = "blue", width = .5)
+
+#LDL and CAD:
+ggbarstats(ldl,
+          LDL,
+           CAD,
+           type = "parametric",
+           xlab = "CAD diagnosis",
+           title = "CAD by LDL levels"
+)
+
+```
+
+#Investigating whether smoking modifies the effect of the association between LDL cholesterol level and CAD using table methods. Report your findings.
+```{r}
+#Factor accordingly
+ldl$LDL <- factor(
+  ldl$LDL,
+  levels = c(1,0)
+)
+ldl$CAD <- factor(
+  ldl$CAD,
+  levels = c(1,0)
+)
+ldl$Smoke <- factor(
+  ldl$Smoke,
+  levels = c(1,0)
+)
+#Create Pooled table
+ldl_pool <- table(ldl$LDL, ldl$CAD)
+ldl_pool
+epiR::epi.2by2(ldl_pool)
+#Create stratified tables on HIV status 
+ldl_stratified <- table(ldl$LDL, ldl$CAD, ldl$Smoke)
+ldl_stratified
+#Calculate OR for each stratified table
+#Non-smokers:
+(16*21)/(9*6) #6.22
+#Smokers:
+(68*46)/(37*16) #5.28
+#OR are not much different, conclude not an effect modifier, must check for potential confounding
+DescTools::WoolfTest(ldl_stratified)
+#X^2=0.05 | p-value: 0.82
+#Fail to reject the null hypothesis of homogeneous association
+#Association does not differ by smoking status, therefore smoking is not an effect modifier
+```
+
+#If smoking status is not an effect modifier of the association between LDL cholesterol level and CAD, determine if it is a confounder of the association.
+```{r}
+#First check if the ldl is associated with smoking
+ldl_smoke <- table(ldl$LDL, ldl$Smoke)
+ldl_smoke
+chisq.test(ldl_smoke, correct = FALSE) 
+#X^2= 0.71 | p-value: 0.3964
+#Fail to reject the null of no association. Smoking and ldl are not associated
+#Conclude smoking can not be a confounder between LDL and CAD
+```
+
+```{r}
+melanoma <- read_csv("Section2Part1.csv")
+```
+
+#Provide summary statistics and data visualization of the variables Dose, Biological, and Recurrence.
+```{r}
+#Dose:
+xtabs( ~ Dose,data = melanoma)
+ggplot(melanoma) +
+  geom_bar(aes(x=Dose), fill = "green", width = .5)
+
+#Biological:
+xtabs( ~ Biological,data = melanoma)
+ggplot(melanoma) +
+  geom_bar(aes(x=Biological), fill = "blue", width = .5)
+
+#Recurrence:
+xtabs( ~ Recurrence,data = melanoma)
+ggplot(melanoma) +
+  geom_bar(aes(x=Recurrence), fill = "red", width = .5)
+```
+
+#Using a logistic regression modele to determine if the addition of biological agents modify the association between dose of chemotherapy and recurrence of the melanoma. 
+```{r}
+melanoma$Dose <- factor(melanoma$Dose, levels = c(0,1))
+
+melanoma$Biological <- factor(melanoma$Biological, levels = c(0,1,2))
+
+
+int_model <- glm(Recurrence~Biological*Dose,data = melanoma,
+    family = binomial(link = "logit"))
+noint_model <- glm(Recurrence~Biological+Dose,data = melanoma,
+    family = binomial(link = "logit"))
+lmtest::lrtest(int_model,noint_model)
+
+#X2=13.866 | p-value= <0.001
+#Reject the null hypothesis and conclude biological agents modify the association between recurrence of melanoma and dose of chemotherapy
+
+#TABLE METHODS:
+#conduct Woolf test stratified by biological agents
+melanoma$Dose <- factor(melanoma$Dose, levels = c(1,0))
+melanoma$Recurrence <- factor(melanoma$Recurrence, levels = c(1,0))
+melanoma$Biological <- factor(melanoma$Biological, levels = c(1,2,0))
+strat_table <- table(melanoma$Dose,melanoma$Recurrence,melanoma$Biological)
+
+DescTools::WoolfTest(strat_table)
+#Reject the null hypothesis and conclude biological agents modify the association between recurrence of melanoma and dose of chemotherapy. Same conclusion as using logistic regression
+```
+
+
+#Determine of the addition of a biological is a confounder of the association between primarytherapy type and recurrence.
+```{r}
+therapy <- read_csv("Section2Part2.csv")
+xtabs(~ Recurrence,data = therapy)
+xtabs(~ Adjuvant,data = therapy)
+
+```
+
+#Logistic models:
+
+```{r}
+crude_model <- glm(
+  Recurrence ~ Adjuvant,
+  data = therapy,
+  family = binomial(link = "logit")
+)
+summary(crude_model)$coefficients
+exp(coef(crude_model)) 
+#OR = 31.47
+```
+
+#Adjusted model
+```{r}
+adjust_model <- glm(
+  Recurrence ~ Adjuvant+Biological,
+  data = therapy,
+  family = binomial(link = "logit")
+)
+summary(adjust_model)$coeff
+exp(coef(adjust_model))
+#OR= 30.88
+#OR are not much different, conclude Biological agents are not a confounder on the association betwen therapy and cancer recurrence
+
+#the odds of cancer recurrence are 30.8 times greater for those receiving radiotherapy compared to those receiving chemotherapy adjusted for biological agents.
+
+```
+
+
+#Providing summary statistics and data visualization of the variables.
+```{r}
+res <- read_csv("Section3Part1.csv")
+
+#Ventilation:
+xtabs( ~ Ventilation,data = res)
+ggplot(res) +
+  geom_bar(aes(x=Ventilation), fill = "green", width = .5)
+
+#Diabetes:
+xtabs( ~ Diabetes,data = res)#not dm should be diabetes
+ggplot(res) +
+  geom_bar(aes(x=Diabetes), fill = "red", width = .5)
+
+#Obesity:
+xtabs( ~ Obesity,data = res)
+ggplot(res) +
+  geom_bar(aes(x=Obesity), fill = "blue", width = .5)
+
+#Age:
+describe(res$Age)
+barplot(table(res$Age),
+        main = "Age Distribution",
+        width = 20,
+        xlab="Age",
+        ylab = "Count",
+        border = "red",
+        density=1
+        )
+
+#CRP:
+describe(res$CRP)
+barplot(table(res$CRP),
+        main = "CRP Distribution",
+        width = 100,
+        xlab="CRP (MG/L)",
+        ylab = "COUNT",
+        border = "blue",
+        density=5
+        )
+
+#HR:
+describe(res$HR)
+barplot(table(res$HR),
+        main = "HR Distribution",
+        width = 50,
+        xlab="HR (beats per min)",
+        ylab = "COUNT",
+        border = "red",
+        density=10
+        )
+```
+
+#Using an omnibus test to determine if the explanatory variables Age, CRP, HR, DM, and Obesity are associated with the need for mechanical ventilation.
+```{r}
+res$Ventilation <- factor(res$Ventilation, levels = c("No", "Yes"))
+res_model <- glm(Ventilation~Age+CRP+HR+Diabetes+Obesity,data=res,
+                 family=binomial(link = "logit"))
+intercept <- glm(Ventilation~1, data=res,
+                 family=binomial(link = "logit"))
+lmtest::lrtest(intercept,res_model)
+#X2=115.19 | p-value <0.001
+#reject the null and conclude at least one of Age, CRP, HR, Diabetes, and Obesity are associated with mechanical ventilation 
+```
+
+
+```{r}
+summary(res_model)
+exp(confint(res_model))
+#Age:
+#wald stat: 5.2 | p-value: <0.001 95% CI for OR (1.05, 1.11) 1 excluded but very close
+#Reject the null hypothesis of no association and conclude age is associated with mechanical ventalation after adjusting for other variables in the model 
+
+#CRP:
+#wald stat: -2.6 | p-value: 0.008 95% CI for OR (0.97, 0.99) 1 excluded but very close
+#Reject the null hypothesis of no association and conclude CRP is associated with mechanical ventilation after adjusting for other variables in the model
+
+#HR:
+#wald stat: 5.39 | p-value: <0.001 95% CI for OR (1.01, 1.03) 1 excluded but very close
+#Reject the null hypothesis of no association and conclude CRP is associated with mechanical ventilation after adjusting for other variables in the model
+
+#Obesity:
+#wald stat: 1.58 | p-value: 0.11 95% CI for OR (0.89, 3.19) 1 is included
+#Fail to reject the null hypothesis of no association and conclude Obesity is not associated with mechanical ventilation after adjusting for other variables in the model
+
+#Diabetes(categorical so need to conduct LRT)
+dm_model <- glm(Ventilation~Age+CRP+HR+Obesity,data=res,
+                 family=binomial(link = "logit"))
+lmtest::lrtest(dm_model,res_model)
+#LRT: 17.75 | p-value=0.001
+#Reject the null and conclude at least one of the categories for diabetes is associated with mechanical ventilation after adjusting for other variables in the model
+#diabetes type2 wald stat: -3.69 | p-value = 0.0002
+```
+
+#To report a model that is easier to interpret, consider if the ordinal explanatory variable can instead be treated as a continuous numerical variable.
+```{r}
+read <- read_csv("Section3Part2.csv")
+```
+
+```{r}
+#ordinal model
+read_model <- glm(Readmission~factor(NovelRiskScore), data=read,family=binomial(link = "logit"))
+summary(read_model)
+#Novel score coefficients increase as ordinal risk scores increase, therefore it seems to be linearly assoicated. 
+
+#Numeric Model
+read_num_model <- glm(Readmission~(NovelRiskScore), data=read,family=binomial(link = "logit"))
+summary(read_num_model)
+#wald stat for numerical Novel Risk Score = 30.14
+
+#Empirical Logit plot
+emplogitplot1(Readmission ~ NovelRiskScore, data = read)
+```
+
+#Determining if the ordinal explanatory variable can be considered as a numerical variable to improve the ability to interpret the model.
+```{r}
+pelvic <- read_csv("Section3Part2.csv")
+#residual misspelled in dataset
+```
+```{r}
+pelvic$Survival <- factor(pelvic$Survival, levels = c("No","Yes"))
+tumor_model <- glm(Survival~factor(Redisual),data = pelvic,family=binomial(link = "logit"))
+summary(tumor_model)
+#Residual score coefficients decrease as ordinal Residual levels increase, therefore it seems to be linearly associated. 
+
+#Empirical Logit plot
+emplogitplot1(Survival ~ Redisual, data = pelvic)
+```
+
+#Explaining the effect on the coefficients of a logistic regression model when a numerical variable is normalized 
+```{r}
+#1- This formula shows standardizing numerical predictors in a model. Each observation is subtracted from the mean of the predictor and divided by the standard deviation. This is especially useful when multiple numerical predictors are in the model. Converting standardized versions also allows for simpler interpretation of the numerical slopes 
+
+#2- This formula shows centering of numerical predictor in a model. Centering each observation by subtracting from the mean will not change the slope estimate or standard error, but will have an impact on the intercept in model, allowing for simpler interpretation.
+```
+
+
+#Building a model that uses Duration and Cesarean as explanatory models. 
+```{r}
+labor <- read_csv("Section3Part3.csv")
+```
+
+```{r}
+labor$Complications <- factor(labor$Complications, levels= c("No","Yes"))
+labor_model <- glm(Complications~Duration+Cesarean,data = labor,family=binomial(link = "logit"))
+summary(labor_model)
+#This dataset contains as many unique profiles as there are observations. Duration time is different for each subject
+#43 degrees of freedom for 44 observations
+
+```
+
+
+```{r}
+#Hosmer and Lemeshow GOF test for individual data
+hl_test_labor <- ResourceSelection::hoslem.test(
+  labor_model$y,
+  fitted(labor_model),
+  g = 10
+)
+hl_test_labor
+#X2= 8.36 with 8 df and p-value = 0.398
+#Fail to reject the null, and conclude this model fits the data well
+```
+
+```{r}
+#Omnibous Test
+obm_model <- glm(Complications~1,data = labor,family=binomial(link = "logit"))
+lmtest::lrtest(obm_model,labor_model)
+#Reject the null and conclude Duration and Cesarean are associated with labor complications
+#Similar to results above
+```
+
+
+#Exploring the best model fit
+```{r}
+set.seed(124)
+section3part4 = data.frame(
+X1 = sample(c(0, 1), size = 1000, replace = TRUE),
+X2 = sample(c(0, 1), size = 1000, replace = TRUE),
+X3 = sample(c(0, 1), size = 1000, replace = TRUE),
+X4 = sample(c(0, 1), size = 1000, replace = TRUE),
+X5 = sample(c(0, 1), size = 1000, replace = TRUE),
+X6 = sample(c(0, 1), size = 1000, replace = TRUE)
+)
+section3part4q1_model = glm(
+X1 ~ X2 * X3 * X4 * X5 * X6,
+data = section3part4,
+family = binomial(link = "logit")
+)
+section3part4q1_intercept_model = glm(
+X1 ~ 1,
+data = section3part4,
+family = binomial(link = "logit")
+)
+summary(
+MASS::stepAIC(
+section3part4q1_model,
+direction = "backward",
+scope = list(
+upper = section3part4q1_model,
+lower = section3part4q1_intercept_model
+),
+trace = 0
+)
+)
+
+#According to this method, the best model is the one with only intercept, which would not be useful at all
+```
+
+
+```{r}
+cor <- read_csv("Section4.csv")
+```
+#Determining if each of the explanatory variables are associated with the presence of coronaryartery disease, cad, by constructing individual single variable models.
+```{r}
+ag_model <- glm(cad ~ age,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(ag_model)
+#wald stat:3.412 | p-value= 0.0006
+#reject the null hypothesis and conclude age is associated with cad
+```
+
+```{r}
+sex_model <- glm(cad ~ sex,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(sex_model)
+#wald stat:2.91 | p-value= 0.004
+#reject the null hypothesis and conclude sex is associated with cad
+```
+
+```{r}
+restbp_model <- glm(cad ~ restbp,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(restbp_model)
+#wald stat:2.29 | p-value= 0.022
+#reject the null hypothesis and conclude restbp is associated with cad
+```
+```{r}
+chest_model <- glm(cad ~ factor(chestpain),
+  data = cor,
+  family = binomial(link = "logit")
+)
+
+red4_model <- glm(cad ~ 1,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(chest_model)
+lmtest::lrtest(red4_model,chest_model)
+#X2= 64.4 | p-value <0.001
+#reject the null and conclude at least one level of chestpain is associated with cad
+```
+
+```{r}
+chol_model <- glm(cad ~ chol,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(chol_model)
+#wald stat:1.39 | p-value= 0.166
+#fail to reject the null hypothesis and conclude cholesterol is not associated with cad
+```
+```{r}
+fbs_model <- glm(cad ~ fbs,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(fbs_model)
+#wald stat:1.39 | p-value= 0.166
+#fail to reject the null hypothesis and conclude cholesterol is not associated with cad
+```
+```{r}
+rest_model <- glm(cad ~ restecg,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(rest_model)
+#wald stat:2.11 | p-value= 0.03
+# reject the null hypothesis and conclude restecg is associated with cad
+```
+```{r}
+maxhr_model <- glm(cad ~ maxhr,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(maxhr_model)
+#wald stat:-6.29 | p-value= <0.001
+# reject the null hypothesis and conclude maxhr is associated with cad
+```
+```{r}
+angina_model <- glm(cad ~ angina,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(angina_model)
+#wald stat:5.97 | p-value= <0.001
+# reject the null hypothesis and conclude angina is associated with cad
+```
+```{r}
+std_model <- glm(cad ~ Stdepression,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(std_model)
+#wald stat:7.11 | p-value= <0.001
+# reject the null hypothesis and conclude Stdepression is associated with cad
+```
+```{r}
+Stslope_model <- glm(cad ~ Stslope,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(Stslope_model)
+#wald stat:5.75 | p-value= <0.001
+# reject the null hypothesis and conclude STslope is associated with cad
+```
+```{r}
+CA_model <- glm(cad ~ CA,
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(CA_model)
+#wald stat:7.34 | p-value= <0.001
+# reject the null hypothesis and conclude CA is associated with cad
+```
+```{r}
+disease_model <- glm(cad ~ (disease),
+  data = cor,
+  family = binomial(link = "logit")
+)
+summary(disease_model)
+
+#LRT
+lmtest::lrtest(disease_model,full_model4 )
+#X2t:103.77 | p-value= <0.001
+# reject the null hypothesis and conclude disease is associated with cad
+```
+
+#Determining if binary sex, sex, is an effect modifier or possible confounder of the associationbetween the level of the presence of angina, angina, and the presence of coronary artery disease,cad.
+```{r}
+#Interaction model
+sex_angina_model <- glm(cad ~ sex*angina,data = cor,family = binomial(link = "logit"))
+summary(sex_angina_model)
+#wald stat for interaction: 0.22; p-value=0.82
+#fail to reject the null and conclude sex does not modify the association between angina and cad
+
+#LRT with reduced model:
+red_model <- glm(cad~sex+angina, data=cor, family = binomial(link = "logit"))
+lmtest::lrtest(red_model, sex_angina_model)
+#Same results as above
+```
+
+```{r}
+#Check for confounding
+summary(angina_model)
+#OR with only angina= 
+exp(1.6536) #5.23
+summary(red_model)
+#OR adjusted for sex=
+exp(1.59) #4.9
+#OR are not much different from each other, may report the crude OR
+#Confrimed using table methods:
+str_table <- table(cor$angina,cor$cad,cor$sex)
+epiR::epi.2by2(str_table)
+#MH OR= 4.93
+#M-H test of homogeneity: X2 = 0.056 Pr>chi2 = 0.812
+
+```
+
+#Considering only the explanatory variables angina and sex. Goodness of fit test to determine if a model that only contains sex as an explanatory variable is a good fit for the data (as compared to the saturated model).
+```{r}
+#saturated model
+sat_model <- glm(cad ~ sex*angina,data = cor,family = binomial(link = "logit"))
+summary(sat_model)
+#model with only sex:
+summary(sex_model)
+
+#Goodness of fit test:
+lmtest::lrtest(sex_model,sat_model)
+#X2=33.8 p-value= <0.001
+#reject the null hypothesis and conclude this model is not a good fit for the data
+```
+
+#Determining if the data for the variables age, restbp, chol, and maxhr, are linearly associated with the presence of coronary artery disease cad.
+```{r}
+describe(cor$age)
+emplogitplot1(cad ~ age, data = cor, ngroups = 10)
+#based on empirical logit plots, age seems to have a positive linear association with cad
+
+describe(cor$restbp)
+emplogitplot1(cad ~ restbp, data = cor, ngroups = 7)
+#based on empirical logit plots, restbp seems to be linearly associated with cad (not sure)
+
+describe(cor$chol)
+emplogitplot1(cad ~ chol, data = cor, ngroups = 10)
+#based on empirical logit plots, chol is not linearly associated with cad (maybe quadratic)
+
+describe(cor$maxhr)
+emplogitplot1(cad ~ maxhr, data = cor, ngroups = 10)
+#based on empirical logit plots, maxhr seems to have a negative linear association with cad
+```
+
+#Comparing the slopes of the variables age, restbp, chol, and maxhr.
+```{r}
+summary(model4.4)
+exp(confint(model4.4))
+#age: 
+exp(0.009185)
+#The odds of cad are 1.01 times greater for every one year increase in age, adjusted for restbp, chol, and maxhr. 95% CI:(0.97, 1.05) includes 1, therefore this is not statistically significant
+
+#restbp:
+exp(0.013960)
+#The odds of cad are 1.01 times greater for every one one unit increase in restbp, adjusted for age, chol, and maxhr. 95% CI:(0.99, 1.03) includes 1, therefore this is not statistically significant
+
+#chol:
+exp( 0.003761)
+#The odds of cad are 1.003 times greater for every one one unit increase in chol, adjusted for age, restbp, and maxhr. 95% CI:(0.99, 1.01) includes 1, therefore this is not statistically significant
+
+#maxhr:
+exp(-0.041581)
+#The odds of cad are 0.96 times greater (or 4% less) for every one one unit increase in maxhr, adjusted for age, restbp, and chol. 95% CI:(0.945, 0.97) does NOT include 1, therefore this is statistically significant
+
+```
+
+#Determining if the ordinal level of chest pain can be considered a numerical variable.
+```{r}
+summary(chest_model)
+
+#graph the empirical log odds to see if there is a linear relationship between chest pain and cad
+
+emplogitplot1(cad ~ chestpain, data = cor, ngroups = 2)
+
+#numerical chestpain model:
+num_chest_model <- glm(cad ~ chestpain, data = cor, family = binomial(link = "logit"))
+summary(num_chest_model)
+```
+
+
+#Considering only the explanatory age, restbp, chol, and maxhr, will Construct a model to determine the association between the explanatory variables and the response variable.
+```{r}
+#Disease model:
+cor$disease <- factor(cor$disease, levels = c("normal", "fixed", "reversible"))
+dis_model <- VGAM::vglm(
+formula = disease~age+restbp+chol+maxhr,
+  data = cor,
+  family = VGAM::multinomial(refLevel = 1) # Set to normal 
+)
+
+summary(dis_model)
+```
+
+
+```{r}
+cor <- 
+  cor %>% 
+  mutate(chestpain = factor(chestpain), 
+         chest_fac = case_when(chestpain == 0 ~ "no pain",
+                                     chestpain == 1 ~ "some pain",
+                                     chestpain == 2 ~ "mild pain",
+                                     chestpain == 3 ~ "high pain",
+                                     chestpain == 4 ~ "rest pain"), 
+          # Convert to a factor
+         chest_fac = factor(chest_fac, levels = c("rest pain", "high pain","mild pain","some pain", "no pain")), 
+         # Add an ordered factor
+         chest_ord = ordered(chest_fac, levels = c("rest pain", "high pain","mild pain","some pain", "no pain"))) 
+
+```
+#proportinal odds model:
+```{r}
+po_model <- VGAM::vglm(
+  formula = chest_ord ~ restecg+age+restbp+chol,
+  data = cor,
+  family = VGAM::cumulative(parallel = TRUE) # Use PO assumption
+)
+
+VGAM::summaryvglm(po_model)
+```
+#brandt test to check po assumption
+```{r}
+chest_check <- polr(chest_ord ~ restecg+age+restbp+chol, data = cor, Hess = TRUE)
+brant(chest_check)
+
+#fail to reject the null hypothesis of violation of the PO assumption for this model
+```
+
+ 
+```{r}
+full_model4 <- glm(cad~age+sex+chestpain+restbp+chol+fbs+restecg+maxhr+angina+Stdepression+Stslope+CA+disease, data = cor, family = binomial(link = "logit"))
+
+#HL test to see if this model fit the data well
+hl_test_info <- ResourceSelection::hoslem.test(
+   full_model4$y,
+  fitted(full_model4),
+  g = 10
+)
+hl_test_info
+
+#fail to reject the null hypothesis. enough evidence that the model does fit the data well.
+```
+#parsimonious model to predict the presence of coronaryartery disease, given the explanatory variables.
+```{r}
+summary(full_model4)
+#Stdepression, CA, and disease are statistically significant after adjusting for all other variables inthe model
+exp(coefficients(full_model4))
+#The odds of cad are 1.77 times greater for each unit increase in Stdepression after adjusting for other variables in the model 
+#The odds of cad are 2.57 times greater for each increase in CA levels after adjusting for other varibles in the model
+#The odds of cad are 2.6 times greater for fixed defect present compared to normal after adjusting for other varibles in the model
+#The odds of cad are 4.6 times greater for reversible defect present compared to normal after adjusting for other varibles in the model
+```
+
+#Fitting a Poisson regression model with rate of amputation by diabetes type (that is, by population at risk) and age of onset level. 
+```{r}
+insulin <- read_csv("Section5.csv")
+```
+
+```{r}
+xtabs(~onsetage,data=insulin)
+insulin$onsetage <- factor(insulin$onsetage, levels = c("UpTo40","40-44","45-49","50-54" ,"55-59", "60-64",  "65-69", "70-74", "75-79","80+" ))
+amp_model <- glm(
+  amputations ~ onsetage + offset(log(pop)),
+  data = insulin,
+  family = poisson(link = "log")
+)
+
+summary(amp_model)
+
+#model:
+#ref_group=UpTo40
+#x1=age40-44 x2=age45-49 x3=age50-54 x4=age55-59 x5=age60-64 x6=age65-69 x7= age70-74 x8=age75-79 x9=age80+
+
+#Model:
+#log(lambda)= -6.985 - 0.50x1 - 0.03x2 + 0.19x3 - 0.21x4 - 0.46x5 + 0.03x6 + 0.36x7 + 0.697x8 + 1.30x9
+```
+
+```{r}
+ insulin <- insulin %>%
+  mutate(pop_thou = pop/1000)
+insulin$diabetes <- factor(insulin$diabetes, levels= c("None","InsulinIndependent","InsulinDependent"))
+
+last_model <- glm(
+  amputations ~ pop_thou + diabetes,
+  data = insulin,
+  family = poisson(link = "log")
+)
+summary(last_model)
+
+

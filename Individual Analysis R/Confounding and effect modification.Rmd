@@ -1,0 +1,334 @@
+---
+title: "Confounding and effect modification"
+author: "Fayssal Ali"
+date: "2022-10-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries}
+
+#Assignment 1
+library(tibble)
+library(dplyr)
+library(epiR)
+library(readr)
+library(DescTools)
+library(epitools)
+library(ggplot2)
+library(ggstatsplot)
+library(crosstable)
+
+
+```
+#Assignment 2:
+
+Question 1 Risk Difference:
+ (π11/π1+) - (π21/π2+)
+
+Question 2 Relative Risk:
+ (π11/π1+) / (π21/π2+)
+
+Question 3 Odds Ratio:
+(π11/π12) * (π22/π21)
+
+
+
+
+#Assignment 3    
+```{r}
+
+#X^2, df=9
+qchisq(.95, df=9)
+#Critical Value = 16.9
+#N(0,1)
+#H0: u<= u0
+#H1: u > u0
+qnorm(.975,lower.tail = T)
+#Critical Value=1.96
+#F3,7
+qf(.95,3,7)
+#Critical Value= 4.35
+
+```
+
+Relative Risk would not be an appropriate measure of association for this study. 
+Case-Control studies have a fixed disease and non-diseased population with random  
+exposure and non-exposure. Therefore, estiamtes can only be made on P(E|D) and P(E|non-D)
+This probabilty is also the estimated OR. 
+
+
+The odds of mortality in patients with severe pancreas/duodenal injury undergoing exploratory laparotomy and trauma pancreaticoduodenectomy are 38% less than those with exploratory laparotomy alone. However, the CI interval includes 1 and the p-value for this statistic is <0.05, therefore this OR is not significant.
+
+The odds of major complications in patients with severe pancreas/duodenal injury undergoing exploratory laparotomy and trauma pancreaticoduodenectomy are 244% greater than those with lapartomy alone. The OR CI does not include 1 and the p-value <0.05 so this result is statistically meaningfull.
+
+The odds of venous thromboembolism in patients with severe pancreas/duodenal injury undergoing exploratory laparotomy and trauma pancreaticoduodenectomy are 386% greater than those with lapartomy alone. The OR CI does not include 1 and the p-value <0.05 so this result is statistically meaningfull.
+
+
+```{r}
+
+#Summary statistics 
+xtabs( ~ mcollege, data = School)
+xtabs( ~ income, data = School)
+School$mcollege <- factor(School$mcollege, levels = c("no", "yes"))
+School$income <- factor(School$income, levels = c("low", "high"))
+
+#Table Summary:
+crosstable::crosstable(
+  School,
+  mcollege,
+  by=income,
+  total = "both",
+  percent_pattern="{n}"
+) %>%
+  crosstable::as_flextable(
+    keep_id = FALSE
+  )
+
+#Graphical Visulization:
+ggbarstats(School,
+           mcollege,
+           income,
+           type = "parametric",
+           xlab = "income",
+           title = "income by college completion"
+)
+
+```
+
+```{r}
+
+new <- table(School$mcollege,School$income)
+new
+epiR::epi.2by2(new)
+```
+#OR= 4.06 (3.2,4.82)
+
+```{r}
+
+chisq.test(new)
+
+```
+
+#X^2= 288.44; p-value<0.001
+#Reject the null hypothesis and conclude an aossociation does exsist betnween mothers college and income
+
+```{r}
+
+xtabs(~ ethnicity, data=School)
+#Create stratfied table
+strat <- table(School$mcollege, School$income, School$ethnicity)
+
+#Conduct Woolf test of Homogeneity on the stratified tables
+DescTools::WoolfTest(strat)
+
+```
+#pvalue= 0.89 and x2 = 0.225 fail to reject hypothesis of homogenous association between the stratified groups
+#Not homogeneous association, Check if Ethnicity is potential confounder
+
+```{r}
+#Check for confounding:
+#create table with X and Z
+eth <- table(School$mcollege, School$ethnicity)
+eth
+#test for association 
+chisq.test(eth) #61.84 and p <0.001
+#Reject the null and conclude there is an association between mother's collge and ethnicity
+new
+#Ethnicity is not on the casual pathway of mother's college
+
+#Conduct measuers of association testing ofr each level of ethnicity:
+
+#afam
+af <- matrix(
+  c(582,55,107,42),
+  nrow = 2,
+  dimnames = list(
+    c("no", "yes"),
+    c("low", "high")
+  )
+)
+
+epiR::epi.2by2(af)
+#Hispanic
+his <- matrix(
+  c(718,33,129,23),
+  nrow = 2,
+  dimnames = list(
+    c("no", "yes"),
+    c("low", "high")
+  )
+)
+
+epiR::epi.2by2(his)
+
+#Other
+ot <- matrix(
+  c(1792,194,760,304),
+  nrow = 2,
+  dimnames = list(
+    c("no", "yes"),
+    c("low", "high")
+  )
+)
+epiR::epi.2by2(ot)
+#The OR for each level of ethnicity seem to be very similar
+
+#Conduct Mantel-Haenszel test
+epiR::epi.2by2(strat)
+
+#MH OR= 3.77 (3.16,4.48)
+```
+
+#Check the rule of thumb:
+#(4.06-3.77)/4.06 =0.07 <0.1
+#Report the crude OR 
+
+```{r}
+xtabs(~private, data=Aus)
+xtabs(~age, data=Aus)
+xtabs(~gender, data=Aus)
+xtabs(~lchronic, data=Aus)
+
+Aus$private <- factor(Aus$private, levels = c("no","yes"))
+
+Aus$lchronic <- factor(Aus$lchronic, levels = c("no","yes"))
+
+Aus$gender <- factor(Aus$gender, levels = c("female","male"))
+
+#Table Summary:
+crosstable::crosstable(
+  Aus,
+  private,
+  by=gender,
+  total = "both",
+  percent_pattern="{n}"
+) %>%
+  crosstable::as_flextable(
+    keep_id = FALSE
+  )
+
+crosstable::crosstable(
+  Aus,
+  private,
+  by=lchronic,
+  total = "both",
+  percent_pattern="{n}"
+) %>%
+  crosstable::as_flextable(
+    keep_id = FALSE
+  )
+
+#Graphical Visulization:
+ggbarstats(Aus,
+           private,
+           gender,
+           type = "parametric",
+           xlab = "gender",
+           title = "private insurance by gender distribution"
+)
+
+ggbarstats(Aus,
+           private,
+           lchronic,
+           type = "parametric",
+           xlab = "lchronic",
+           title = "private insurance by chronic condition"
+)
+
+```
+
+```{r}
+
+#Age
+pr <- glm(private~age, data=Aus, 
+          family = binomial(link = "logit"))
+summary(pr)$coeff
+
+#Gender
+ge <-  glm(private~gender, data=Aus, 
+           family = binomial(link = "logit"))
+summary(ge)$coeff
+
+#Lchronic
+lc <- glm(private~lchronic, data=Aus, 
+          family = binomial(link = "logit"))
+summary(lc)$coeff
+```
+
+```{r}
+
+full<- glm(private~age+gender+lchronic, data=Aus, 
+          family = binomial(link = "logit"))
+summary(full)$coeff
+#Model
+# Y= 0.24 - 0.74x1 - 0.32x2 - 0.24x3
+#Intercept: 0.25 = the log odds of private insurance for those who are female, no chronic condition, and age=0
+#B1: -0.74= the log odds of private insurance for a one-year increase of age, adjusted for gender and prescence of chronic condition 
+#B2: -0.32= the log odds of private insurance comparing females and males adjusted for age andprscence of chronic condition 
+#B3: -0.24= the log odds of private insurance comparing those with a chronic condition and those without adjusted for age and gender
+```
+
+```{r}
+
+#probability of insurance given---- age= 30(30/100),female(0) no chronic(0)
+exp(0.25 - (.74*.32))/(1+ exp(0.25 - (.74*.32)))
+
+#50.33% of having private insurance given a female age 30 with no chronic condition 
+```
+```{r}
+#Question 7:
+#Check for effect modification:
+
+full2 <- glm(private~gender+lchronic+gender*lchronic, data=Aus, 
+         family = binomial(link = "logit"))
+summary(full2)$coeff
+
+#Zstat of 0.9 and pvalue of 0.37 
+#Fail to reject the null hypothesis and conclude lchronic does not modify the association 
+#between gender and private insurance
+
+#Check for confounding 
+w <- glm(private~gender, data=Aus, 
+         family = binomial(link = "logit"))
+summary(w)$coeff
+exp(coefficients(w))
+exp(confint.default(w, level = 0.95))
+#OR= 0.79 (0.71,0.89) comaring females to males in the crude model
+
+adj <- glm(private~gender+lchronic, data=Aus, 
+           family = binomial(link = "logit"))
+
+summary(adj)$coeff
+exp(coefficients(adj))
+exp(confint.default(adj, level = 0.95))
+#OR= 0.79 (0.71,0.88) comparing females to males when adjusted for presence of a chronic condition 
+
+#Since OR and CI are very similar, can report the crude numbers
+
+#Can also confirm/check with table methods:
+p <- table(Aus$gender, Aus$private, Aus$lchronic)
+p
+epiR::epi.2by2(p)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

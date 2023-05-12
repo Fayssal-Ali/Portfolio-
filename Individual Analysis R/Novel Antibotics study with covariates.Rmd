@@ -1,0 +1,110 @@
+---
+title: "Novel Antibotics study with covariates"
+author: "Fayssal"
+date: "2022-10-12"
+output: html_document
+---
+
+Investigating the effect of a novel antibiotic compared to an established antibiotic on the development of surgical surgery, while also considering hollow-viscus injury as a potential effect modifier. Hollow Viscus injury will have three categorical levels 
+(None, SBI, LBI)
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Upload the Dataset
+emp <- read_csv("empirical_injury_infection_data.csv")
+
+
+```
+
+#Factor accordingly 
+
+```{r emp}
+emp$Injury <- factor(
+  emp$Injury,
+  levels = c("None", "SBI", "LBI")
+)
+
+emp$Infection <- factor(
+  emp$Infection,
+  levels = c("No", "Yes")
+)
+
+emp$Group <- factor(
+  emp$Group,
+  levels = c("Established", "Novel")
+)
+```
+
+## Build the Model
+
+#Refrence Group= No Injury 
+
+```{r }
+model2 <- glm(Infection~ Group + Injury + Group*Injury,
+              data=emp,
+              family = binomial(link = "logit")
+)
+summary(model2)$coefficient
+```
+Model:
+log=-2.33 0.28x 0.20z1 +0.16z2 -0.54xz1 -1.76xz2
+log= -2.33 +0.20z1 +0.16z2 +(0.28z1 -0.54z2 -1.76)x
+#Test the reduced model without the interaction 
+
+```{r}
+model2.1 <- glm(Infection~ Group + Injury,
+              data=emp,
+              family = binomial(link = "logit")
+)
+summary(model2.1)$coefficient
+```
+#LRT test
+#Testing H0: B4=B5=0 (states Z is not an effect modifier)
+
+
+```{r}
+
+lmtest::lrtest(model2.1, model2)
+```
+#2 degrees of freedom(6-4)
+#G^2 stat= 38.329 and pvalue= <0.001
+#Reject the null hypothesis and conclude Injury does modify the association between anitboitic group and surgical infection. 
+
+#Log odds ratio for all 3 levels:
+
+
+#Show the individual results of hypothesis testing and CI
+```{r}
+em_grid2 <- emmeans::emmeans(
+  model2,
+  ~ Group | Injury
+)
+
+emmeans::contrast(
+  em_grid2,
+  "consec",
+  name = "Injury",
+  infer = c(TRUE, TRUE),
+  level = 0.95
+)
+```
+#Antilog calculations
+```{r}
+exp(c(0.283, -0.0557, 0.6226))
+exp(c(-0.253, -0.6014, 0.0964))
+exp(c(-1.477, -1.9390, -1.0144))
+```
+#Conclusion: For those with no injury or SBI, there is not enough evidence to show an association between antibiotic group and surgical infection
+
+
+
+#Graphical representation 
+```{r}
+emmeans::emmip(
+  model2,
+  ~ Group | Injury
+)
+```
+

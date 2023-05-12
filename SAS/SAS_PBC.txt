@@ -1,0 +1,50 @@
+libname hw6 '/home/u60701163/Public Health 6853/6853/Week 10';"
+
+data sex_f(drop=subj_id rename=(tempvar=number)); set hw6.sex_f;
+tempvar = input(subj_id,8.);
+run;		
+proc sort data= sex_f; by number;		
+proc sort data= hw6.sex_m; by number;
+		
+*Corrected data step;    
+data pbc;
+set hw6.sex_m(in=inmale) sex_f(in=infemale); logalb=log(albumin);
+by number;
+if inmale=1 then sex=1; if infemale=1 then sex=0; run;
+
+*Interaction;			
+PROC sort data=pbc;
+by descending sex descending histol;"			
+"proc glm data=pbc order=data; class sex histol;
+model logalb= sex histol sex*histol/solution; lsmeans histol*sex/adjust=bon cl ;
+run;
+*No Interaction;"			
+"PROC sort data=pbc;
+by descending sex descending histol;"			
+"proc glm data=pbc order=data; class histol;
+model logalb= sex histol/solution; lsmeans histol/adjust=bon cl ; run;"			
+						
+
+	
+"data dil1(rename=(date1=admin) rename=(date2=delivery) rename=(MEDRNO=ID)); set hw6.dil1;
+run;"	
+"data dil2(drop=subj_id rename=(tempvar=ID) rename=(date1=discharge)); set hw6.dil2;
+tempvar= input(subj_id,12.);"	
+"run;"
+proc sort data=dil1; by ID; run;			
+proc sort data=dil2; by ID; run;				
+						
+data merge_dil; merge dil1					
+	if delivery < admin or delivery > discharge then delete;
+	if abs(xwtgainlb) > 60 then delete;
+by ID;
+run;
+
+*Anova Model;
+proc glm data=merge_dil order=data; class t_v1;
+model bweighta = xwtgainlb t_v1 xwtgainlb*t_v1/solution clparm;
+run;"	
+"proc glm data=merge_dil order=data; class t_v1;
+model bweighta =t_v1 xwtgainlb t_v1*xwtgainlb/solution clparm; lsmeans t_v1/at xwtgainlb=0 pdiff cl;
+lsmeans t_v1/at xwtgainlb=20 pdiff cl; lsme
+run;	
